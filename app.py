@@ -4,7 +4,7 @@ import requests
 app = Flask(__name__)
 
 # === TAAPI.io API 설정 ===
-TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYxOTIxMTIyLCJleHAiOjMzMjY2Mzg1MTIyfQ.1tCjlog-xrsmLI9zhGx6feGNaaojrMkz5HM8vcuDH8c"
+TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYxOTIzNDU3LCJleHAiOjMzMjY2Mzg3NDU3fQ.g3Q3bM8pkKga6cgbhf9HDe99xAMPt6L4nRBrYybmDvk"
 BASE_URL = "https://api.taapi.io"
 
 @app.route('/')
