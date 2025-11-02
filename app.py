@@ -24,14 +24,16 @@ BASE_URL = "https://api.taapi.io"
 def get_sheets_service():
     creds_json = os.getenv("GOOGLE_SERVICE_ACCOUNT")
     if not creds_json:
-        print("❌ GOOGLE_SERVICE_ACCOUNT 환경변수 없음 (not set)")
         raise ValueError("❌ GOOGLE_SERVICE_ACCOUNT not set")
+
+    # 🔧 개행 복원 (Render에서 \n이 무시될 때 대비)
+    creds_json = creds_json.replace('\\n', '\n')
+
     creds_dict = json.loads(creds_json)
     credentials = service_account.Credentials.from_service_account_info(
         creds_dict,
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
-    print("✅ GOOGLE_SERVICE_ACCOUNT 로드 성공")
     return build("sheets", "v4", credentials=credentials)
 
 @app.route("/read-sheet", methods=["GET"])
