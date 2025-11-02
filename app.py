@@ -4,8 +4,6 @@ import os
 import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from dotenv import load_dotenv  # ✅ 추가
-load_dotenv()  # ✅ 추가
 
 app = Flask(__name__)
 
