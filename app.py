@@ -37,8 +37,18 @@ def get_sheets_service():
 @app.route("/read-sheet", methods=["GET"])
 def read_sheet():
     try:
-        sheet_id = os.getenv("SHEET_ID")
-        sheet_name = os.getenv("SHEET_NAME", "지니_수집데이터_v5")
+        # 환경변수 강제 재로드
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        sheet_id = os.environ.get("SHEET_ID")
+        sheet_name = os.environ.get("SHEET_NAME", "지니_수집데이터_v5")
+
+        print(f"📘 DEBUG - SHEET_ID: {sheet_id}, SHEET_NAME: {sheet_name}")
+
+        if not sheet_id:
+            raise ValueError("❌ No sheet_id detected from environment")
+
         service = get_sheets_service()
 
         result = (
@@ -52,6 +62,7 @@ def read_sheet():
     except Exception as e:
         print("❌ Read Error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/write-sheet", methods=["POST"])
 def write_sheet():
