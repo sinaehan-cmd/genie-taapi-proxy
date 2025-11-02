@@ -21,13 +21,18 @@ BASE_URL = "https://api.taapi.io"
 # ─────────────────────────────────────────────
 # 📘 Google Sheets Relay
 # ─────────────────────────────────────────────
+import base64 
+
 def get_sheets_service():
-    creds_json = os.getenv("GOOGLE_SERVICE_ACCOUNT")
-    if not creds_json:
+    raw_env = os.getenv("GOOGLE_SERVICE_ACCOUNT")
+    if not raw_env:
         raise ValueError("❌ GOOGLE_SERVICE_ACCOUNT not set")
 
-    # 🔧 개행 복원 (Render에서 \n이 무시될 때 대비)
-    creds_json = creds_json.replace('\\n', '\n')
+    # Base64 → JSON 디코딩
+    try:
+        creds_json = base64.b64decode(raw_env).decode()
+    except Exception:
+        creds_json = raw_env.replace('\\n', '\n')
 
     creds_dict = json.loads(creds_json)
     credentials = service_account.Credentials.from_service_account_info(
