@@ -75,6 +75,16 @@ def write_sheet():
         print("❌ Write Error:", e)
         return jsonify({"error": str(e)}), 500
 
+@app.route("/env-check")
+def env_check():
+    import os
+    return jsonify({
+        "GOOGLE_SERVICE_ACCOUNT": bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")),
+        "SHEET_ID": os.getenv("SHEET_ID"),
+        "SHEET_NAME": os.getenv("SHEET_NAME")
+    })
+
+
 @app.route('/')
 def home():
     return jsonify({"status": "Genie TAAPI Proxy Active ✅"})
