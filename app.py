@@ -1,223 +1,202 @@
 from flask import Flask, jsonify, request, render_template_string
-import requests
-import os
-import json
-import base64
+import requests, os, json, base64
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
 
-# === 환경변수 디버깅 ===
-print("🔍 환경변수 로드 점검 시작 =======================")
-print("GOOGLE_SERVICE_ACCOUNT 존재 여부:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
+# ─────────────────────────────────────────────
+# ⚙️ 환경 변수
+# ─────────────────────────────────────────────
+print("🔍 환경변수 로드 점검 =======================")
+print("GOOGLE_SERVICE_ACCOUNT:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
 print("SHEET_ID:", os.getenv("SHEET_ID"))
-print("SHEET_NAME:", os.getenv("SHEET_NAME"))
+print("GENIE_ACCESS_KEY:", bool(os.getenv("GENIE_ACCESS_KEY")))
 print("==================================================")
 
-# === TAAPI.io API 설정 ===
-TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYxOTIzNDU3LCJleHAiOjMzMjY2Mzg3NDU3fQ.g3Q3bM8pkKga6cgbhf9HDe99xAMPt6L4nRBrYybmDvk"
-BASE_URL = "https://api.taapi.io"
+GENIE_KEY = os.getenv("GENIE_ACCESS_KEY", "GENIE_DEFAULT_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # ─────────────────────────────────────────────
-# 📘 Google Sheets Relay
+# 🧠 Telegram 메시지 발송
+# ─────────────────────────────────────────────
+def send_telegram_message(text):
+    """텔레그램으로 알림 전송"""
+    try:
+        if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+            print("⚠️ Telegram 정보가 누락됨.")
+            return
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
+        requests.post(url, json=payload)
+        print(f"✅ Telegram 전송 완료: {text}")
+    except Exception as e:
+        print(f"❌ Telegram 오류: {e}")
+
+# ─────────────────────────────────────────────
+# 📗 Google Sheets 연결
 # ─────────────────────────────────────────────
 def get_sheets_service():
     raw_env = os.getenv("GOOGLE_SERVICE_ACCOUNT")
     if not raw_env:
         raise ValueError("❌ GOOGLE_SERVICE_ACCOUNT not set")
-
-    # Base64 → JSON 디코딩
     try:
         creds_json = base64.b64decode(raw_env).decode()
     except Exception:
         creds_json = raw_env.replace('\\n', '\n')
-
     creds_dict = json.loads(creds_json)
     credentials = service_account.Credentials.from_service_account_info(
-        creds_dict,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
     return build("sheets", "v4", credentials=credentials)
 
 # ─────────────────────────────────────────────
-# 📗 시트 데이터 읽기 (JSON)
-# ─────────────────────────────────────────────
-@app.route("/read-sheet", methods=["GET"])
-def read_sheet():
-    try:
-        sheet_id = os.environ.get("SHEET_ID")
-        sheet_name = os.environ.get("SHEET_NAME", "지니_수집데이터_v5")
-
-        if not sheet_id:
-            raise ValueError("❌ No sheet_id detected from environment")
-
-        service = get_sheets_service()
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=sheet_id, range=f"{sheet_name}!A1:J")
-            .execute()
-        )
-        values = result.get("values", [])
-        return jsonify(values)
-    except Exception as e:
-        print("❌ Read Error:", e)
-        return jsonify({"error": str(e)}), 500
-
-# ─────────────────────────────────────────────
-# 📘 시트에 쓰기 (POST)
+# 📘 다중 시트 쓰기 (POST)
 # ─────────────────────────────────────────────
 @app.route("/write-sheet", methods=["POST"])
 def write_sheet():
     try:
-        sheet_id = os.getenv("SHEET_ID")
-        sheet_name = os.getenv("SHEET_NAME", "지니_수집데이터_v5")
-        service = get_sheets_service()
+        client_key = request.headers.get("X-GENIE-KEY", "")
+        if client_key != GENIE_KEY:
+            return jsonify({"error": "❌ Invalid GENIE key"}), 403
 
         body = request.get_json()
+        target = body.get("target", "지니_수집데이터_v5")
         values = body.get("values")
+        if not values:
+            return jsonify({"error": "❌ No values provided"}), 400
+
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
 
         service.spreadsheets().values().append(
             spreadsheetId=sheet_id,
-            range=f"{sheet_name}!A1",
+            range=f"{target}!A1",
             valueInputOption="USER_ENTERED",
             body={"values": values}
         ).execute()
 
-        return jsonify({"status": "✅ Data written successfully"})
+        # 🔥 불장 이벤트 감지 시 Telegram 발송
+        joined = str(values).lower()
+        if any(k in joined for k in ["불장", "급등", "급락", "폭락"]):
+            send_telegram_message(f"🚀 <b>불장 이벤트 감지</b>\n📄 대상: {target}\n📊 데이터: {values}")
+
+        return jsonify({"status": "✅ written", "target": target, "values": values})
     except Exception as e:
-        print("❌ Write Error:", e)
+        send_telegram_message(f"❌ 시트 쓰기 오류: {e}")
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
-# 📊 HTML 테이블 뷰 (최근 7일만 표시)
+# 📗 다중 시트 읽기 (GET)
 # ─────────────────────────────────────────────
-@app.route("/view-sheet")
-def view_sheet():
+@app.route("/read-sheet", methods=["GET"])
+def read_sheet():
+    try:
+        target = request.args.get("target", "지니_수집데이터_v5")
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=sheet_id, range=f"{target}!A1:Z")
+            .execute()
+        )
+        return jsonify(result.get("values", []))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ─────────────────────────────────────────────
+# 🌐 HTML 보기 (시트명 선택)
+# ─────────────────────────────────────────────
+@app.route("/view-sheet/<target>")
+def view_sheet(target):
     try:
         sheet_id = os.getenv("SHEET_ID")
-        sheet_name = os.getenv("SHEET_NAME", "지니_수집데이터_v5")
         service = get_sheets_service()
 
         result = (
             service.spreadsheets()
             .values()
-            .get(spreadsheetId=sheet_id, range=f"{sheet_name}!A1:J")
+            .get(spreadsheetId=sheet_id, range=f"{target}!A1:Z")
             .execute()
         )
         values = result.get("values", [])
-
         if not values:
-            return "<h3>❌ 시트에 데이터가 없습니다.</h3>"
+            return f"<h3>❌ 시트 '{target}'에 데이터가 없습니다.</h3>"
 
         headers = values[0]
         rows = values[1:]
-
-        # 🔹 최근 168행(=1시간 단위 7일치)만 출력
         if len(rows) > 168:
             rows = rows[-168:]
+        date_range = f"{rows[0][0]} ~ {rows[-1][0]}" if rows else ""
 
-        # 🔹 날짜 범위 표시용 (첫 행~마지막 행)
-        date_range = ""
-        if rows:
-            first_date = rows[0][0] if len(rows[0]) > 0 else ""
-            last_date = rows[-1][0] if len(rows[-1]) > 0 else ""
-            date_range = f"{first_date} ~ {last_date}"
-
-        # 🔹 HTML 템플릿
         html = """
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <meta name="robots" content="index, follow">
-            <title>Genie Data View</title>
-            <style>
-                body { font-family: 'Pretendard', sans-serif; background:#f8f9fa; padding:40px; }
-                h2 { color:#333; margin-bottom:15px; }
-                table { border-collapse: collapse; width:100%; background:white; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
-                th, td { border:1px solid #dee2e6; padding:8px 12px; text-align:center; }
-                th { background:#343a40; color:#fff; }
-                tr:nth-child(even){background:#f2f2f2;}
-                caption { font-size:20px; font-weight:600; margin-bottom:10px; color:#333; }
-            </style>
-            <script>
-                setTimeout(function(){ location.reload(); }, 600000); // 10분마다 새로고침
-            </script>
-        </head>
-        <body>
-            <h2>📊 Genie Google Sheets Live View (최근 7일)</h2>
-            <p><b>📅 데이터 범위:</b> {{ date_range }}</p>
-            <table>
-                <thead>
-                    <tr>
-                        {% for header in headers %}
-                            <th>{{ header }}</th>
-                        {% endfor %}
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in rows %}
-                        <tr>
-                            {% for cell in row %}
-                                <td>{{ cell }}</td>
-                            {% endfor %}
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </body>
-        </html>
+        <html><head><meta charset="utf-8"><meta name="robots" content="index, follow">
+        <title>{{ target }} | Genie View</title>
+        <style>
+            body { font-family: Pretendard, sans-serif; background:#f8f9fa; padding:30px; }
+            table { border-collapse: collapse; width:100%; background:white; }
+            th, td { border:1px solid #ccc; padding:6px 10px; text-align:center; }
+            th { background:#343a40; color:white; }
+            tr:nth-child(even){background:#f2f2f2;}
+        </style></head><body>
+            <h2>📊 Genie Sheet: {{ target }}</h2>
+            <p>📅 기간: {{ date_range }}</p>
+            <table><thead><tr>
+            {% for h in headers %}<th>{{ h }}</th>{% endfor %}
+            </tr></thead><tbody>
+            {% for row in rows %}<tr>{% for c in row %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}
+            </tbody></table></body></html>
         """
-
-        return render_template_string(html, headers=headers, rows=rows, date_range=date_range)
-
+        return render_template_string(html, target=target, headers=headers, rows=rows, date_range=date_range)
     except Exception as e:
-        return f"<h3>❌ 오류 발생: {str(e)}</h3>"
+        return f"<h3>❌ 오류: {e}</h3>"
 
 # ─────────────────────────────────────────────
-# 🌍 환경 체크
+# 📣 수동 Telegram 전송 엔드포인트
+# ─────────────────────────────────────────────
+@app.route("/send-alert", methods=["POST"])
+def send_alert():
+    body = request.get_json()
+    msg = body.get("message", "⚠️ 기본 알림")
+    send_telegram_message(msg)
+    return jsonify({"status": "✅ Telegram sent", "message": msg})
+
+# ─────────────────────────────────────────────
+# 🌍 상태 점검
 # ─────────────────────────────────────────────
 @app.route("/env-check")
 def env_check():
     return jsonify({
-        "GOOGLE_SERVICE_ACCOUNT": bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")),
         "SHEET_ID": os.getenv("SHEET_ID"),
-        "SHEET_NAME": os.getenv("SHEET_NAME")
+        "GENIE_ACCESS_KEY": bool(GENIE_KEY),
+        "TELEGRAM_BOT_TOKEN": bool(TELEGRAM_BOT_TOKEN),
+        "TELEGRAM_CHAT_ID": bool(TELEGRAM_CHAT_ID),
+        "registered_sheets": [
+            "지니_수집데이터_v5", "지니_브리핑로그", "지니_예측데이터",
+            "지니_GTI로그", "지니_계산식저장소", "지니_시스템로그"
+        ]
     })
 
-@app.route('/robots.txt')
-def robots_txt():
-    return (
-        "User-agent: *\nAllow: /",
-        200,
-        {'Content-Type': 'text/plain'}
-    )
-
 # ─────────────────────────────────────────────
-# 🧠 기본 루트 & 인디케이터
+# 🏁 기본 루트
 # ─────────────────────────────────────────────
-@app.route('/')
+@app.route("/")
 def home():
-    return jsonify({"status": "Genie TAAPI Proxy Active ✅"})
-
-@app.route('/indicator', methods=['GET'])
-def get_indicator():
-    symbol = request.args.get('symbol', 'BTC/USDT')
-    exchange = request.args.get('exchange', 'binance')
-    indicator = request.args.get('indicator', 'rsi')
-    interval = request.args.get('interval', '1h')
-
-    try:
-        url = f"{BASE_URL}/{indicator}?secret={TAAPI_KEY}&exchange={exchange}&symbol={symbol}&interval={interval}"
-        response = requests.get(url)
-        data = response.json()
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({
+        "status": "Genie Unified Proxy ✅",
+        "routes": {
+            "write": "/write-sheet (POST, target 지정)",
+            "read": "/read-sheet?target=<시트명>",
+            "view": "/view-sheet/<시트명> (HTML 보기)",
+            "alert": "/send-alert (POST)"
+        }
+    })
 
 # ─────────────────────────────────────────────
-# 🏁 실행
+# 실행
 # ─────────────────────────────────────────────
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
