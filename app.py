@@ -130,6 +130,7 @@ def view_sheet():
         <html>
         <head>
             <meta charset="utf-8">
+            <meta name="robots" content="index, follow">
             <title>Genie Data View</title>
             <style>
                 body { font-family: 'Pretendard', sans-serif; background:#f8f9fa; padding:40px; }
