@@ -324,7 +324,7 @@ def core_write():
 
 
 # ─────────────────────────────────────────────
-# 🔁 Automation Loop – 안정화 버전 v2.1 (GTI 구조 호환형)
+# 🔁 Automation Loop – 안정화 버전 v2.2 (GTI 구조 호환형)
 # ─────────────────────────────────────────────
 @app.route("/auto_loop", methods=["POST"])
 def auto_loop():
@@ -334,7 +334,6 @@ def auto_loop():
     - GPT로 Interpretation 생성
     - GTI 호환 구조(Timestamp, MarketCode, BTC_RSI, BTC_Price, Dominance, MVRV_Z, Interpretation, Confidence, Comment)로 기록
     """
-
     try:
         data = request.get_json(force=True)
         if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
@@ -343,9 +342,11 @@ def auto_loop():
         service = get_sheets_service()
         sheet_id = os.getenv("SHEET_ID")
 
-        # 안전한 float 변환 함수
+        # ✅ 안전한 float 변환 함수 (빈칸·None 방어)
         def float_try(v, default=0.0):
             try:
+                if v is None or str(v).strip() == "":
+                    return default
                 return float(v)
             except:
                 return default
@@ -405,15 +406,23 @@ def auto_loop():
         write_service = get_sheets_service(write=True)
         target_sheet = "genie_briefing_log"
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
         row_data = [
-            now, market_code, btc_rsi, btc_price, dominance, mvrv_z,
-            interpretation, confidence, comment
+            now,            # Timestamp
+            market_code,    # MarketCode
+            btc_rsi,        # BTC_RSI
+            btc_price,      # BTC_Price
+            dominance,      # Dominance
+            mvrv_z,         # MVRV_Z
+            interpretation, # Interpretation
+            confidence,     # Confidence
+            comment         # Comment
         ]
 
         try:
             write_service.spreadsheets().values().append(
                 spreadsheetId=sheet_id,
-                range=target_sheet,
+                range=f"{target_sheet}!A:I",  # ✅ 명시적 A~I 범위
                 valueInputOption="USER_ENTERED",
                 insertDataOption="INSERT_ROWS",
                 body={"values": [row_data]}
@@ -454,7 +463,7 @@ def auto_loop():
                 # ✅ 헤더 작성 후 데이터 추가
                 write_service.spreadsheets().values().append(
                     spreadsheetId=sheet_id,
-                    range=target_sheet,
+                    range=f"{target_sheet}!A:I",
                     valueInputOption="USER_ENTERED",
                     insertDataOption="INSERT_ROWS",
                     body={"values": [row_data]}
@@ -475,6 +484,8 @@ def auto_loop():
     except Exception as e:
         print("❌ auto_loop error:", e)
         return jsonify({"error": str(e)}), 500
+
+
 # ─────────────────────────────────────────────
 # 루트
 # ─────────────────────────────────────────────
