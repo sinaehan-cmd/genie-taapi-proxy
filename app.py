@@ -13,6 +13,11 @@ from openai import OpenAI
 app = Flask(__name__)
 CORS(app)
 
+# === TAAPI.io API 설정 ===
+TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYxOTIzNDU3LCJleHAiOjMzMjY2Mzg3NDU3fQ.g3Q3bM8pkKga6cgbhf9HDe99xAMPt6L4nRBrYybmDvk"
+BASE_URL = "https://api.taapi.io"
+
+
 # ─────────────────────────────────────────────
 # ⚙️ 환경변수 로드
 # ─────────────────────────────────────────────
@@ -23,9 +28,7 @@ print("GENIE_ACCESS_KEY:", bool(os.getenv("GENIE_ACCESS_KEY")))
 print("🔑 OPENAI_API_KEY:", bool(os.getenv("OPENAI_API_KEY")))
 print("==================================================")
 
-# === TAAPI.io API 설정 ===
-TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYxOTIzNDU3LCJleHAiOjMzMjY2Mzg3NDU3fQ.g3Q3bM8pkKga6cgbhf9HDe99xAMPt6L4nRBrYybmDvk"
-BASE_URL = "https://api.taapi.io"
+
 
 # ─────────────────────────────────────────────
 # 📗 Google Sheets 인증
