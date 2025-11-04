@@ -1,40 +1,24 @@
 from flask import Flask, jsonify, request, render_template_string
 import requests, os, json, base64
+from urllib.parse import unquote
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
 
 # ─────────────────────────────────────────────
-# ⚙️ 환경변수 및 기본 설정
+# ⚙️ 환경변수
 # ─────────────────────────────────────────────
 print("🔍 환경변수 로드 =======================")
 print("GOOGLE_SERVICE_ACCOUNT:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
 print("SHEET_ID:", os.getenv("SHEET_ID"))
 print("==================================================")
 
-# 🔹 여기에 너의 TAAPI 유료 키를 직접 넣어
 TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYyMjIyNTY1LCJleHAiOjMzMjY2Njg2NTY1fQ.VJ25E5hAGvSBYBSeDSX8FT7bW1EwhJY27VebneBrNPM"
 BASE_URL = "https://api.taapi.io"
 
 # ─────────────────────────────────────────────
-# 🧠 Telegram (선택사항, 생략해도 무방)
-# ─────────────────────────────────────────────
-def send_telegram_message(text):
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print(text)
-        return
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
-        requests.post(url, json=payload, timeout=5)
-    except Exception as e:
-        print("Telegram Error:", e)
-
-# ─────────────────────────────────────────────
-# 📗 Google Sheets (선택적 사용)
+# 📗 Google Sheets 인증
 # ─────────────────────────────────────────────
 def get_sheets_service():
     raw_env = os.getenv("GOOGLE_SERVICE_ACCOUNT")
@@ -46,51 +30,97 @@ def get_sheets_service():
         creds_json = raw_env.replace('\\n', '\n')
     creds_dict = json.loads(creds_json)
     credentials = service_account.Credentials.from_service_account_info(
-        creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
     )
     return build("sheets", "v4", credentials=credentials, cache_discovery=False)
 
 # ─────────────────────────────────────────────
-# 📈 TAAPI.io Indicator API (시트 스크립트용)
+# 📜 시트 목록 반환
 # ─────────────────────────────────────────────
-@app.route("/indicator", methods=["GET"])
-def get_indicator():
-    symbol = request.args.get("symbol", "BTC/USDT")
-    exchange = request.args.get("exchange", "binance")
-    indicator = request.args.get("indicator", "rsi")
-    interval = request.args.get("interval", "1h")
-
+@app.route("/sheets-list")
+def list_sheets():
+    """지니가 각 시트 접근용 URL 목록을 가져올 수 있도록 함"""
     try:
-        url = (
-            f"{BASE_URL}/{indicator}"
-            f"?secret={TAAPI_KEY}&exchange={exchange}"
-            f"&symbol={symbol}&interval={interval}"
-        )
-        print(f"➡️ Requesting: {url[:100]}...")  # 로그에 일부만 표시
-        response = requests.get(url, timeout=10)
-        data = response.json()
-
-        val = (
-            data.get("value")
-            or (data.get("result", {}).get("value") if isinstance(data.get("result"), dict) else None)
-            or (data.get("data", {}).get("value") if isinstance(data.get("data"), dict) else None)
-        )
-        macd_val = (
-            data.get("valueMACD")
-            or (data.get("result", {}).get("valueMACD") if isinstance(data.get("result"), dict) else None)
-        )
-
-        return jsonify({
-            "value": val,
-            "valueMACD": macd_val,
-            "timestamp": data.get("timestamp", ""),
-            "symbol": symbol,
-            "indicator": indicator,
-            "interval": interval
-        })
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+        metadata = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        sheets = [s["properties"]["title"] for s in metadata["sheets"]]
+        urls = [f"{request.host_url}view-html/{s}" for s in sheets]
+        return jsonify({"sheets": sheets, "urls": urls})
     except Exception as e:
-        print("❌ Indicator Error:", e)
+        print("❌ sheets-list 오류:", e)
         return jsonify({"error": str(e)}), 500
+
+# ─────────────────────────────────────────────
+# 🌐 HTML 보기 (지니 전용, 외부 최소노출)
+# ─────────────────────────────────────────────
+@app.route("/view-html/<path:sheet_name>")
+def view_sheet_html(sheet_name):
+    """시트 내용을 HTML로 렌더링 (지니가 web.open으로 읽기 쉽게)"""
+    try:
+        decoded_name = unquote(sheet_name)
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range=decoded_name
+        ).execute()
+        values = result.get("values", [])
+        if not values:
+            return "<h3>No data found</h3>"
+
+        # HTML 테이블 렌더링
+        table_html = "<table border='1' cellspacing='0' cellpadding='4' style='border-collapse:collapse;'>"
+        for row in values:
+            table_html += "<tr>" + "".join([f"<td>{cell}</td>" for cell in row]) + "</tr>"
+        table_html += "</table>"
+
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="ko">
+        <head>
+            <meta charset="utf-8">
+            <meta name="robots" content="noindex, follow"> <!-- ✅ 지니 접근 허용, 색인 차단 -->
+            <title>{decoded_name}</title>
+            <style>
+                body {{ font-family: 'Segoe UI', sans-serif; padding: 20px; background: #fafafa; }}
+                table {{ width: 100%; max-width: 900px; margin:auto; background: white; }}
+                td {{ border: 1px solid #ddd; padding: 6px; font-size: 13px; }}
+                tr:nth-child(even) {{ background-color: #f9f9f9; }}
+            </style>
+        </head>
+        <body>
+            <h2>📘 {decoded_name}</h2>
+            {table_html}
+            <p style="margin-top:20px;color:gray;">Private view for Genie System</p>
+        </body>
+        </html>
+        """
+        return render_template_string(html)
+    except Exception as e:
+        print("❌ view-html 오류:", e)
+        return f"<h3>오류 발생: {e}</h3>", 500
+
+# ─────────────────────────────────────────────
+# 🪄 Genie 접근 신호 파일
+# ─────────────────────────────────────────────
+@app.route("/random.txt")
+def random_txt():
+    return "hello genie", 200, {"Content-Type": "text/plain"}
+
+# ─────────────────────────────────────────────
+# 🤖 robots.txt – 최소 허용 버전
+# ─────────────────────────────────────────────
+@app.route("/robots.txt")
+def robots():
+    return (
+        "User-agent: *\n"
+        "Disallow: /\n"
+        "Allow: /random.txt\n"
+        "Allow: /view-html/\n"
+        "Allow: /sheets-list\n",
+        200,
+        {"Content-Type": "text/plain"},
+    )
 
 # ─────────────────────────────────────────────
 # 🏁 루트
@@ -98,14 +128,14 @@ def get_indicator():
 @app.route("/")
 def home():
     return jsonify({
-        "status": "Genie Proxy ✅",
+        "status": "Genie Render Server ✅",
         "routes": {
-            "indicator": "/indicator?indicator=rsi&symbol=BTC/USDT&interval=1h"
+            "list_sheets": "/sheets-list",
+            "view_html": "/view-html/<sheet_name>",
+            "random": "/random.txt",
+            "robots": "/robots.txt"
         }
     })
 
-# ─────────────────────────────────────────────
-# 실행
-# ─────────────────────────────────────────────
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
