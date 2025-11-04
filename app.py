@@ -6,38 +6,35 @@ from googleapiclient.discovery import build
 app = Flask(__name__)
 
 # ─────────────────────────────────────────────
-# ⚙️ 환경 변수 로드 로그
+# ⚙️ 환경변수 및 기본 설정
 # ─────────────────────────────────────────────
 print("🔍 환경변수 로드 =======================")
 print("GOOGLE_SERVICE_ACCOUNT:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
 print("SHEET_ID:", os.getenv("SHEET_ID"))
-print("GENIE_ACCESS_KEY:", bool(os.getenv("GENIE_ACCESS_KEY")))
-print("TAAPI_KEY:", bool(os.getenv("TAAPI_KEY")))
 print("==================================================")
 
-GENIE_KEY = os.getenv("GENIE_ACCESS_KEY", "GENIE_DEFAULT_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-TAAPI_KEY = os.getenv("TAAPI_KEY", "YOUR_TAAPI_KEY")
+# 🔹 여기에 너의 TAAPI 유료 키를 직접 넣어
+TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYyMjIyNTY1LCJleHAiOjMzMjY2Njg2NTY1fQ.VJ25E5hAGvSBYBSeDSX8FT7bW1EwhJY27VebneBrNPM"
 BASE_URL = "https://api.taapi.io"
 
 # ─────────────────────────────────────────────
-# 🧠 Telegram 메시지 발송
+# 🧠 Telegram (선택사항, 생략해도 무방)
 # ─────────────────────────────────────────────
 def send_telegram_message(text):
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print(text)
+        return
     try:
-        if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-            print("⚠️ Telegram 정보 누락.")
-            return
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
         requests.post(url, json=payload, timeout=5)
-        print(f"✅ Telegram 전송: {text}")
     except Exception as e:
-        print(f"❌ Telegram 오류: {e}")
+        print("Telegram Error:", e)
 
 # ─────────────────────────────────────────────
-# 📗 Google Sheets 연결
+# 📗 Google Sheets (선택적 사용)
 # ─────────────────────────────────────────────
 def get_sheets_service():
     raw_env = os.getenv("GOOGLE_SERVICE_ACCOUNT")
@@ -54,7 +51,7 @@ def get_sheets_service():
     return build("sheets", "v4", credentials=credentials, cache_discovery=False)
 
 # ─────────────────────────────────────────────
-# 📈 TAAPI.io Indicator (시트 스크립트용 API)
+# 📈 TAAPI.io Indicator API (시트 스크립트용)
 # ─────────────────────────────────────────────
 @app.route("/indicator", methods=["GET"])
 def get_indicator():
@@ -64,124 +61,46 @@ def get_indicator():
     interval = request.args.get("interval", "1h")
 
     try:
-        url = f"{BASE_URL}/{indicator}?secret={TAAPI_KEY}&exchange={exchange}&symbol={symbol}&interval={interval}"
+        url = (
+            f"{BASE_URL}/{indicator}"
+            f"?secret={TAAPI_KEY}&exchange={exchange}"
+            f"&symbol={symbol}&interval={interval}"
+        )
+        print(f"➡️ Requesting: {url[:100]}...")  # 로그에 일부만 표시
         response = requests.get(url, timeout=10)
         data = response.json()
 
-        # Apps Script가 직접 읽을 수 있도록 단순 JSON 반환
+        val = (
+            data.get("value")
+            or (data.get("result", {}).get("value") if isinstance(data.get("result"), dict) else None)
+            or (data.get("data", {}).get("value") if isinstance(data.get("data"), dict) else None)
+        )
+        macd_val = (
+            data.get("valueMACD")
+            or (data.get("result", {}).get("valueMACD") if isinstance(data.get("result"), dict) else None)
+        )
+
         return jsonify({
-            "value": data.get("value"),
-            "valueMACD": data.get("valueMACD"),
+            "value": val,
+            "valueMACD": macd_val,
             "timestamp": data.get("timestamp", ""),
             "symbol": symbol,
             "indicator": indicator,
             "interval": interval
         })
     except Exception as e:
-        send_telegram_message(f"❌ TAAPI 오류: {e}")
+        print("❌ Indicator Error:", e)
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
-# 📗 시트 데이터 읽기 (테스트/브라우저 확인용)
-# ─────────────────────────────────────────────
-@app.route("/read-sheet", methods=["GET"])
-def read_sheet():
-    try:
-        target = request.args.get("target", "지니_수집데이터_v5")
-        service = get_sheets_service()
-        sheet_id = os.getenv("SHEET_ID")
-
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=sheet_id, range=f"{target}!A1:Z")
-            .execute()
-        )
-        return jsonify(result.get("values", []))
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ─────────────────────────────────────────────
-# 🌐 HTML 보기
-# ─────────────────────────────────────────────
-@app.route("/view-sheet/<target>")
-def view_sheet(target):
-    try:
-        sheet_id = os.getenv("SHEET_ID")
-        service = get_sheets_service()
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=sheet_id, range=f"{target}!A1:Z")
-            .execute()
-        )
-        values = result.get("values", [])
-        if not values:
-            return f"<h3>❌ 시트 '{target}'에 데이터가 없습니다.</h3>"
-
-        headers = values[0]
-        rows = values[1:]
-        if len(rows) > 168:
-            rows = rows[-168:]
-        date_range = f"{rows[0][0]} ~ {rows[-1][0]}" if rows else ""
-
-        html = """
-        <html><head><meta charset="utf-8">
-        <title>{{ target }} | Genie View</title>
-        <style>
-            body { font-family: Pretendard, sans-serif; background:#f8f9fa; padding:30px; }
-            table { border-collapse: collapse; width:100%; background:white; }
-            th, td { border:1px solid #ccc; padding:6px 10px; text-align:center; }
-            th { background:#343a40; color:white; }
-            tr:nth-child(even){background:#f2f2f2;}
-        </style></head><body>
-            <h2>📊 Genie Sheet: {{ target }}</h2>
-            <p>📅 기간: {{ date_range }}</p>
-            <table><thead><tr>
-            {% for h in headers %}<th>{{ h }}</th>{% endfor %}
-            </tr></thead><tbody>
-            {% for row in rows %}<tr>{% for c in row %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}
-            </tbody></table></body></html>
-        """
-        return render_template_string(html, target=target, headers=headers, rows=rows, date_range=date_range)
-    except Exception as e:
-        return f"<h3>❌ 오류: {e}</h3>"
-
-# ─────────────────────────────────────────────
-# 📣 Telegram 테스트
-# ─────────────────────────────────────────────
-@app.route("/send-alert", methods=["POST"])
-def send_alert():
-    body = request.get_json()
-    msg = body.get("message", "⚠️ 기본 알림")
-    send_telegram_message(msg)
-    return jsonify({"status": "✅ Telegram sent", "message": msg})
-
-# ─────────────────────────────────────────────
-# 🌍 상태 점검
-# ─────────────────────────────────────────────
-@app.route("/env-check")
-def env_check():
-    return jsonify({
-        "SHEET_ID": os.getenv("SHEET_ID"),
-        "GENIE_ACCESS_KEY": bool(GENIE_KEY),
-        "TELEGRAM_BOT_TOKEN": bool(TELEGRAM_BOT_TOKEN),
-        "TELEGRAM_CHAT_ID": bool(TELEGRAM_CHAT_ID),
-        "TAAPI_KEY": bool(TAAPI_KEY),
-    })
-
-# ─────────────────────────────────────────────
-# 🏁 기본 루트
+# 🏁 루트
 # ─────────────────────────────────────────────
 @app.route("/")
 def home():
     return jsonify({
-        "status": "Genie Proxy API ✅",
+        "status": "Genie Proxy ✅",
         "routes": {
-            "indicator": "/indicator?symbol=BTC/USDT&indicator=rsi",
-            "view": "/view-sheet/<시트명>",
-            "alert": "/send-alert (POST)",
-            "env": "/env-check"
+            "indicator": "/indicator?indicator=rsi&symbol=BTC/USDT&interval=1h"
         }
     })
 
