@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 app = Flask(__name__)
 
 # ─────────────────────────────────────────────
-# ⚙️ 환경 변수
+# ⚙️ 환경 변수 로드 로그
 # ─────────────────────────────────────────────
 print("🔍 환경변수 로드 점검 =======================")
 print("GOOGLE_SERVICE_ACCOUNT:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
@@ -17,20 +17,21 @@ print("==================================================")
 GENIE_KEY = os.getenv("GENIE_ACCESS_KEY", "GENIE_DEFAULT_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TAAPI_KEY = os.getenv("TAAPI_KEY", "YOUR_TAAPI_KEY")
+BASE_URL = "https://api.taapi.io"
 
 # ─────────────────────────────────────────────
 # 🧠 Telegram 메시지 발송
 # ─────────────────────────────────────────────
 def send_telegram_message(text):
-    """텔레그램으로 알림 전송"""
     try:
         if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-            print("⚠️ Telegram 정보가 누락됨.")
+            print("⚠️ Telegram 정보 누락.")
             return
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
-        requests.post(url, json=payload)
-        print(f"✅ Telegram 전송 완료: {text}")
+        requests.post(url, json=payload, timeout=5)
+        print(f"✅ Telegram 전송: {text}")
     except Exception as e:
         print(f"❌ Telegram 오류: {e}")
 
@@ -49,10 +50,10 @@ def get_sheets_service():
     credentials = service_account.Credentials.from_service_account_info(
         creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
-    return build("sheets", "v4", credentials=credentials)
+    return build("sheets", "v4", credentials=credentials, cache_discovery=False)
 
 # ─────────────────────────────────────────────
-# 📘 다중 시트 쓰기 (POST)
+# 📘 다중 시트 쓰기
 # ─────────────────────────────────────────────
 @app.route("/write-sheet", methods=["POST"])
 def write_sheet():
@@ -72,15 +73,15 @@ def write_sheet():
 
         service.spreadsheets().values().append(
             spreadsheetId=sheet_id,
-            range=f"{target}!A1",
+            range=f"{target}!A:Z",
             valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
             body={"values": values}
         ).execute()
 
-        # 🔥 불장 이벤트 감지 시 Telegram 발송
         joined = str(values).lower()
         if any(k in joined for k in ["불장", "급등", "급락", "폭락"]):
-            send_telegram_message(f"🚀 <b>불장 이벤트 감지</b>\n📄 대상: {target}\n📊 데이터: {values}")
+            send_telegram_message(f"🚀 <b>불장 이벤트 감지</b>\n📄 {target}\n📊 {values}")
 
         return jsonify({"status": "✅ written", "target": target, "values": values})
     except Exception as e:
@@ -88,7 +89,7 @@ def write_sheet():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
-# 📗 다중 시트 읽기 (GET)
+# 📗 다중 시트 읽기
 # ─────────────────────────────────────────────
 @app.route("/read-sheet", methods=["GET"])
 def read_sheet():
@@ -108,14 +109,51 @@ def read_sheet():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
-# 🌐 HTML 보기 (시트명 선택)
+# 📈 TAAPI.io Indicator (자동 수집)
+# ─────────────────────────────────────────────
+@app.route("/indicator", methods=["GET"])
+def get_indicator():
+    symbol = request.args.get("symbol", "BTC/USDT")
+    exchange = request.args.get("exchange", "binance")
+    indicator = request.args.get("indicator", "rsi")
+    interval = request.args.get("interval", "1h")
+    target = request.args.get("target", "지니_수집데이터_v5")
+
+    try:
+        url = f"{BASE_URL}/{indicator}?secret={TAAPI_KEY}&exchange={exchange}&symbol={symbol}&interval={interval}"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        value = data.get("value", "UNKNOWN")
+
+        # 자동 시트 기록
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+        values = [[
+            data.get("timestamp", ""), symbol, indicator.upper(), interval,
+            value, "auto"
+        ]]
+        service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range=f"{target}!A:Z",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": values}
+        ).execute()
+
+        send_telegram_message(f"📊 {symbol} {indicator.upper()}={value} 기록 완료")
+        return jsonify({"status": "✅ success", "data": data})
+    except Exception as e:
+        send_telegram_message(f"❌ TAAPI 수집 오류: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ─────────────────────────────────────────────
+# 🌐 HTML 보기
 # ─────────────────────────────────────────────
 @app.route("/view-sheet/<target>")
 def view_sheet(target):
     try:
         sheet_id = os.getenv("SHEET_ID")
         service = get_sheets_service()
-
         result = (
             service.spreadsheets()
             .values()
@@ -133,7 +171,7 @@ def view_sheet(target):
         date_range = f"{rows[0][0]} ~ {rows[-1][0]}" if rows else ""
 
         html = """
-        <html><head><meta charset="utf-8"><meta name="robots" content="index, follow">
+        <html><head><meta charset="utf-8">
         <title>{{ target }} | Genie View</title>
         <style>
             body { font-family: Pretendard, sans-serif; background:#f8f9fa; padding:30px; }
@@ -155,7 +193,7 @@ def view_sheet(target):
         return f"<h3>❌ 오류: {e}</h3>"
 
 # ─────────────────────────────────────────────
-# 📣 수동 Telegram 전송 엔드포인트
+# 📣 수동 Telegram 전송
 # ─────────────────────────────────────────────
 @app.route("/send-alert", methods=["POST"])
 def send_alert():
@@ -174,6 +212,7 @@ def env_check():
         "GENIE_ACCESS_KEY": bool(GENIE_KEY),
         "TELEGRAM_BOT_TOKEN": bool(TELEGRAM_BOT_TOKEN),
         "TELEGRAM_CHAT_ID": bool(TELEGRAM_CHAT_ID),
+        "TAAPI_KEY": bool(TAAPI_KEY),
         "registered_sheets": [
             "지니_수집데이터_v5", "지니_브리핑로그", "지니_예측데이터",
             "지니_GTI로그", "지니_계산식저장소", "지니_시스템로그"
@@ -188,9 +227,10 @@ def home():
     return jsonify({
         "status": "Genie Unified Proxy ✅",
         "routes": {
+            "indicator": "/indicator?symbol=BTC/USDT&indicator=rsi",
             "write": "/write-sheet (POST, target 지정)",
             "read": "/read-sheet?target=<시트명>",
-            "view": "/view-sheet/<시트명> (HTML 보기)",
+            "view": "/view-sheet/<시트명>",
             "alert": "/send-alert (POST)"
         }
     })
