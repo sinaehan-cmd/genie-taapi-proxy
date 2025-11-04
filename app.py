@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────
-# 🧠 Genie Google Sheets Proxy (v2.1 – alias hybrid)
+# 🧠 Genie Google Sheets Proxy (v2.2 – web-indexable edition)
 # ─────────────────────────────────────────────
 from flask import Flask, jsonify, request, render_template_string
 from flask_cors import CORS
@@ -79,7 +79,7 @@ def list_sheets():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
-# 🌐 HTML 보기
+# 🌐 HTML 보기 (GPT 접근 허용)
 # ─────────────────────────────────────────────
 @app.route("/view-html/<path:sheet_name>")
 def view_sheet_html(sheet_name):
@@ -104,7 +104,7 @@ def view_sheet_html(sheet_name):
         <html lang="ko">
         <head>
             <meta charset="utf-8">
-            <meta name="robots" content="noindex, follow">
+            <meta name="robots" content="index, follow">
             <title>{decoded_name}</title>
             <style>
                 body {{ font-family: 'Segoe UI', sans-serif; padding: 20px; background: #fafafa; }}
@@ -116,7 +116,7 @@ def view_sheet_html(sheet_name):
         <body>
             <h2>📘 {decoded_name}</h2>
             {table_html}
-            <p style="margin-top:20px;color:gray;">Private view for Genie System</p>
+            <p style="margin-top:20px;color:gray;">Public view for Genie System – indexing allowed ✅</p>
         </body>
         </html>
         """
@@ -168,18 +168,13 @@ def random_txt():
     return "hello genie", 200, {"Content-Type": "text/plain"}
 
 # ─────────────────────────────────────────────
-# 🤖 robots.txt
+# 🤖 robots.txt (모두 허용)
 # ─────────────────────────────────────────────
 @app.route("/robots.txt")
 def robots():
     return (
         "User-agent: *\n"
-        "Disallow: /\n"
-        "Allow: /random.txt\n"
-        "Allow: /view-html/\n"
-        "Allow: /sheets-list\n"
-        "Allow: /write\n"
-        "Allow: /test\n",
+        "Allow: /\n",
         200,
         {"Content-Type": "text/plain"},
     )
@@ -199,7 +194,8 @@ def home():
             "random": "/random.txt",
             "robots": "/robots.txt"
         },
-        "sheet_alias_mode": "한글 시트명 유지 + 영문 알리아스 자동 변환"
+        "sheet_alias_mode": "한글 시트명 유지 + 영문 알리아스 자동 변환",
+        "visibility": "GPT-accessible ✅"
     })
 
 if __name__ == "__main__":
