@@ -8,6 +8,7 @@ from urllib.parse import unquote
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime
+from openai import OpenAI
 
 app = Flask(__name__)
 CORS(app)
@@ -190,6 +191,7 @@ def strategy_write():
 # ─────────────────────────────────────────────
 # 🧠 Core Room – OpenAI API 기반 브리핑 쓰기
 # ─────────────────────────────────────────────
+
 @app.route("/core_write", methods=["POST"])
 def core_write():
     try:
@@ -200,11 +202,9 @@ def core_write():
         prompt = data.get("prompt", "Write a brief market summary for BTC and ETH.")
         sheet_name = data.get("sheet_name", "genie_briefing_log")
 
-        # 🔑 OpenAI 호출
-        import openai
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-
-        completion = openai.ChatCompletion.create(
+        # 🔑 OpenAI 호출 (v1.x 인터페이스)
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are Genie, a concise market analyst."},
@@ -216,7 +216,6 @@ def core_write():
 
         summary = completion.choices[0].message.content.strip()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
         values = [[now, prompt, summary]]
 
         # 📗 시트 기록
@@ -239,7 +238,7 @@ def core_write():
     except Exception as e:
         print("❌ core_write error:", e)
         return jsonify({"error": str(e)}), 500
-
+        
 # ─────────────────────────────────────────────
 # 루트
 # ─────────────────────────────────────────────
