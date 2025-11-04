@@ -238,6 +238,75 @@ def core_write():
     except Exception as e:
         print("❌ core_write error:", e)
         return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
+# 🔁 Automation Loop – 1시간 주기 브리핑 루프
+# ─────────────────────────────────────────────
+@app.route("/auto_loop", methods=["POST"])
+def auto_loop():
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        sheet_id = os.getenv("SHEET_ID")
+        service = get_sheets_service()
+
+        # 1️⃣ 최신 데이터 한 줄 가져오기
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id,
+            range="genie_data_v5"
+        ).execute()
+        values = result.get("values", [])
+        if not values:
+            return jsonify({"error": "No data found"}), 404
+
+        last_row = values[-1]
+        timestamp, symbol, price, dominance, comment = last_row[:5]
+
+        # 2️⃣ 프롬프트 자동 생성
+        prompt = (
+            f"Based on the latest data:\n"
+            f"Time: {timestamp}\nSymbol: {symbol}\nPrice: {price}\n"
+            f"Dominance: {dominance}\nComment: {comment}\n"
+            f"Summarize market sentiment for Genie briefing log in one sentence."
+        )
+
+        # 3️⃣ OpenAI 호출
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are Genie, a concise market analyst."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=150
+        )
+
+        summary = completion.choices[0].message.content.strip()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 4️⃣ 시트에 기록
+        service = get_sheets_service(write=True)
+        service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="genie_briefing_log",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [[now, prompt, summary]]}
+        ).execute()
+
+        print("✅ Auto-loop summary logged.")
+        return jsonify({"result": "logged", "summary": summary})
+
+    except Exception as e:
+        print("❌ auto_loop error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
         
 # ─────────────────────────────────────────────
 # 루트
