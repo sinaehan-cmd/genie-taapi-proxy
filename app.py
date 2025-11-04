@@ -135,6 +135,59 @@ def robots():
     return "User-agent: *\nAllow: /\n", 200, {"Content-Type": "text/plain"}
 
 # ─────────────────────────────────────────────
+# 🧠 Strategy Room – Genie Alert Writer
+# ─────────────────────────────────────────────
+@app.route("/strategy_write", methods=["POST"])
+def strategy_write():
+    """
+    지니가 RSI, Dominance 등 조건을 감지하면
+    genie_alert_log(지니_알람로그)에 자동 기록하는 엔드포인트
+    """
+    try:
+        data = request.get_json(force=True)
+        key = data.get("access_key")
+        if key != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        rsi = float(data.get("RSI", 0))
+        dominance = float(data.get("Dominance", 0))
+        symbol = data.get("Symbol", "BTC")
+
+        event, comment = None, ""
+        if rsi >= 70:
+            event, comment = "RSI_OVERHEAT", f"RSI 과열 ({rsi})"
+        elif rsi <= 30:
+            event, comment = "RSI_OVERSOLD", f"RSI 과매도 ({rsi})"
+        elif dominance < 55:
+            event, comment = "ALT_ROTATION", f"도미넌스 하락 ({dominance})"
+
+        if not event:
+            return jsonify({"result": "no_event", "RSI": rsi, "Dominance": dominance})
+
+        # Google Sheets에 기록
+        service = get_sheets_service(write=True)
+        sheet_id = os.getenv("SHEET_ID")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        values = [[now, symbol, event, rsi, comment]]
+
+        service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="genie_alert_log",  # ✅ 시트명 (= 지니_알람로그)
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": values}
+        ).execute()
+
+        print(f"✅ Strategy event logged: {event} / {comment}")
+        return jsonify({"result": "logged", "event": event, "RSI": rsi, "Dominance": dominance})
+
+    except Exception as e:
+        print("❌ strategy_write error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+
+# ─────────────────────────────────────────────
 # 루트
 # ─────────────────────────────────────────────
 @app.route("/")
