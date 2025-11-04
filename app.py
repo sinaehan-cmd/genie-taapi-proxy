@@ -60,6 +60,35 @@ def test():
         "sheet_id": os.getenv("SHEET_ID")
     })
 
+
+# ─────────────────────────────────────────────
+# ✅ TAAPI 확인
+# ─────────────────────────────────────────────
+
+@app.route("/taapi_test")
+def taapi_test():
+    """RSI 테스트 호출"""
+    try:
+        symbol = "BTC/USDT"
+        interval = "1h"
+        url = f"{BASE_URL}/rsi"
+        params = {
+            "secret": TAAPI_KEY,
+            "exchange": "binance",
+            "symbol": symbol,
+            "interval": interval
+        }
+
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
+        print("📊 TAAPI response:", data)
+        return jsonify(data)
+
+    except Exception as e:
+        print("❌ TAAPI test error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
 # ─────────────────────────────────────────────
 # 🌐 HTML 뷰
 # ─────────────────────────────────────────────
