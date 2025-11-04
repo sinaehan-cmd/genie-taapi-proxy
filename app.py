@@ -240,7 +240,6 @@ def core_write():
         print("❌ core_write error:", e)
         return jsonify({"error": str(e)}), 500
 
-
 # ─────────────────────────────────────────────
 # 루트
 # ─────────────────────────────────────────────
@@ -251,7 +250,9 @@ def home():
         "routes": {
             "view": "/view-html/<sheet_name>",
             "write": "/write",
-            "test": "/test
+            "strategy_write": "/strategy_write",
+            "core_write": "/core_write",
+            "test": "/test"
         }
     })
 
