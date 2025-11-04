@@ -7,7 +7,7 @@ from googleapiclient.discovery import build
 app = Flask(__name__)
 
 # ─────────────────────────────────────────────
-# ⚙️ 환경변수
+# ⚙️ 환경변수 로드
 # ─────────────────────────────────────────────
 print("🔍 환경변수 로드 =======================")
 print("GOOGLE_SERVICE_ACCOUNT:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
@@ -35,11 +35,21 @@ def get_sheets_service():
     return build("sheets", "v4", credentials=credentials, cache_discovery=False)
 
 # ─────────────────────────────────────────────
+# ✅ 상태확인용 엔드포인트 (Render 하트비트)
+# ─────────────────────────────────────────────
+@app.route("/test")
+def test():
+    return jsonify({
+        "status": "ok",
+        "message": "✅ Genie Proxy is running!",
+        "note": "서버 정상 작동 중입니다."
+    })
+
+# ─────────────────────────────────────────────
 # 📜 시트 목록 반환
 # ─────────────────────────────────────────────
 @app.route("/sheets-list")
 def list_sheets():
-    """지니가 각 시트 접근용 URL 목록을 가져올 수 있도록 함"""
     try:
         service = get_sheets_service()
         sheet_id = os.getenv("SHEET_ID")
@@ -52,11 +62,10 @@ def list_sheets():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
-# 🌐 HTML 보기 (지니 전용, 외부 최소노출)
+# 🌐 HTML 보기 (지니 전용)
 # ─────────────────────────────────────────────
 @app.route("/view-html/<path:sheet_name>")
 def view_sheet_html(sheet_name):
-    """시트 내용을 HTML로 렌더링 (지니가 web.open으로 읽기 쉽게)"""
     try:
         decoded_name = unquote(sheet_name)
         service = get_sheets_service()
@@ -68,7 +77,6 @@ def view_sheet_html(sheet_name):
         if not values:
             return "<h3>No data found</h3>"
 
-        # HTML 테이블 렌더링
         table_html = "<table border='1' cellspacing='0' cellpadding='4' style='border-collapse:collapse;'>"
         for row in values:
             table_html += "<tr>" + "".join([f"<td>{cell}</td>" for cell in row]) + "</tr>"
@@ -79,7 +87,7 @@ def view_sheet_html(sheet_name):
         <html lang="ko">
         <head>
             <meta charset="utf-8">
-            <meta name="robots" content="noindex, follow"> <!-- ✅ 지니 접근 허용, 색인 차단 -->
+            <meta name="robots" content="noindex, follow">
             <title>{decoded_name}</title>
             <style>
                 body {{ font-family: 'Segoe UI', sans-serif; padding: 20px; background: #fafafa; }}
@@ -101,14 +109,14 @@ def view_sheet_html(sheet_name):
         return f"<h3>오류 발생: {e}</h3>", 500
 
 # ─────────────────────────────────────────────
-# 🪄 Genie 접근 신호 파일
+# 🪄 접근 신호 파일
 # ─────────────────────────────────────────────
 @app.route("/random.txt")
 def random_txt():
     return "hello genie", 200, {"Content-Type": "text/plain"}
 
 # ─────────────────────────────────────────────
-# 🤖 robots.txt – 최소 허용 버전
+# 🤖 robots.txt
 # ─────────────────────────────────────────────
 @app.route("/robots.txt")
 def robots():
@@ -117,7 +125,8 @@ def robots():
         "Disallow: /\n"
         "Allow: /random.txt\n"
         "Allow: /view-html/\n"
-        "Allow: /sheets-list\n",
+        "Allow: /sheets-list\n"
+        "Allow: /test\n",
         200,
         {"Content-Type": "text/plain"},
     )
@@ -130,6 +139,7 @@ def home():
     return jsonify({
         "status": "Genie Render Server ✅",
         "routes": {
+            "test": "/test",
             "list_sheets": "/sheets-list",
             "view_html": "/view-html/<sheet_name>",
             "random": "/random.txt",
