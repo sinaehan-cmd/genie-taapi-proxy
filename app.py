@@ -12,6 +12,7 @@ app = Flask(__name__)
 print("🔍 환경변수 로드 =======================")
 print("GOOGLE_SERVICE_ACCOUNT:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
 print("SHEET_ID:", os.getenv("SHEET_ID"))
+print("GENIE_ACCESS_KEY:", bool(os.getenv("GENIE_ACCESS_KEY")))
 print("==================================================")
 
 TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYyMjIyNTY1LCJleHAiOjMzMjY2Njg2NTY1fQ.VJ25E5hAGvSBYBSeDSX8FT7bW1EwhJY27VebneBrNPM"
@@ -20,7 +21,7 @@ BASE_URL = "https://api.taapi.io"
 # ─────────────────────────────────────────────
 # 📗 Google Sheets 인증
 # ─────────────────────────────────────────────
-def get_sheets_service():
+def get_sheets_service(write=False):
     raw_env = os.getenv("GOOGLE_SERVICE_ACCOUNT")
     if not raw_env:
         raise ValueError("❌ GOOGLE_SERVICE_ACCOUNT not set")
@@ -29,8 +30,11 @@ def get_sheets_service():
     except Exception:
         creds_json = raw_env.replace('\\n', '\n')
     creds_dict = json.loads(creds_json)
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    if not write:
+        scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
     credentials = service_account.Credentials.from_service_account_info(
-        creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        creds_dict, scopes=scopes
     )
     return build("sheets", "v4", credentials=credentials, cache_discovery=False)
 
@@ -109,6 +113,37 @@ def view_sheet_html(sheet_name):
         return f"<h3>오류 발생: {e}</h3>", 500
 
 # ─────────────────────────────────────────────
+# ✍️ Google Sheets 쓰기 (Genie 전용 인증키 필요)
+# ─────────────────────────────────────────────
+@app.route("/write", methods=["POST"])
+def write_data():
+    try:
+        data = request.get_json(force=True)
+        # 🔒 Access Key 검증
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "❌ Invalid access key"}), 403
+
+        sheet_id = os.getenv("SHEET_ID")
+        sheet_name = data.get("sheet_name")
+        values = [data.get("values", [])]
+
+        service = get_sheets_service(write=True)
+        service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range=sheet_name,
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": values}
+        ).execute()
+
+        print("✅ 데이터 쓰기 완료:", values)
+        return jsonify({"result": "✅ Write success", "values": values})
+
+    except Exception as e:
+        print("❌ write 오류:", e)
+        return jsonify({"error": str(e)}), 500
+
+# ─────────────────────────────────────────────
 # 🪄 접근 신호 파일
 # ─────────────────────────────────────────────
 @app.route("/random.txt")
@@ -126,6 +161,7 @@ def robots():
         "Allow: /random.txt\n"
         "Allow: /view-html/\n"
         "Allow: /sheets-list\n"
+        "Allow: /write\n"
         "Allow: /test\n",
         200,
         {"Content-Type": "text/plain"},
@@ -142,6 +178,7 @@ def home():
             "test": "/test",
             "list_sheets": "/sheets-list",
             "view_html": "/view-html/<sheet_name>",
+            "write": "/write",
             "random": "/random.txt",
             "robots": "/robots.txt"
         }
