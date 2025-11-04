@@ -1,10 +1,15 @@
+# ─────────────────────────────────────────────
+# 🧠 Genie Google Sheets Proxy (v2.1 – alias hybrid)
+# ─────────────────────────────────────────────
 from flask import Flask, jsonify, request, render_template_string
+from flask_cors import CORS
 import requests, os, json, base64
 from urllib.parse import unquote
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
+CORS(app)
 
 # ─────────────────────────────────────────────
 # ⚙️ 환경변수 로드
@@ -15,11 +20,19 @@ print("SHEET_ID:", os.getenv("SHEET_ID"))
 print("GENIE_ACCESS_KEY:", bool(os.getenv("GENIE_ACCESS_KEY")))
 print("==================================================")
 
-TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYyMjIyNTY1LCJleHAiOjMzMjY2Njg2NTY1fQ.VJ25E5hAGvSBYBSeDSX8FT7bW1EwhJY27VebneBrNPM"
-BASE_URL = "https://api.taapi.io"
+# ─────────────────────────────────────────────
+# 🧩 한글 → 영문 알리아스 매핑 테이블
+# ─────────────────────────────────────────────
+SHEET_ALIAS = {
+    "지니_수집데이터_v5": "genie_data_v5",
+    "지니_브리핑로그": "genie_briefing_log",
+    "지니_예측데이터": "genie_predictions",
+    "지니_GTI로그": "genie_gti_log",
+    "지니_계산식저장소": "genie_formula_store",
+}
 
 # ─────────────────────────────────────────────
-# 📗 Google Sheets 인증
+# 📗 Google Sheets 인증 함수
 # ─────────────────────────────────────────────
 def get_sheets_service(write=False):
     raw_env = os.getenv("GOOGLE_SERVICE_ACCOUNT")
@@ -39,7 +52,7 @@ def get_sheets_service(write=False):
     return build("sheets", "v4", credentials=credentials, cache_discovery=False)
 
 # ─────────────────────────────────────────────
-# ✅ 상태확인용 엔드포인트 (Render 하트비트)
+# ✅ 상태확인용 (Render 하트비트)
 # ─────────────────────────────────────────────
 @app.route("/test")
 def test():
@@ -66,7 +79,7 @@ def list_sheets():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
-# 🌐 HTML 보기 (지니 전용)
+# 🌐 HTML 보기
 # ─────────────────────────────────────────────
 @app.route("/view-html/<path:sheet_name>")
 def view_sheet_html(sheet_name):
@@ -113,31 +126,35 @@ def view_sheet_html(sheet_name):
         return f"<h3>오류 발생: {e}</h3>", 500
 
 # ─────────────────────────────────────────────
-# ✍️ Google Sheets 쓰기 (Genie 전용 인증키 필요)
+# ✍️ 시트 쓰기 (Access Key 기반 인증)
 # ─────────────────────────────────────────────
 @app.route("/write", methods=["POST"])
 def write_data():
     try:
         data = request.get_json(force=True)
-        # 🔒 Access Key 검증
         if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
             return jsonify({"error": "❌ Invalid access key"}), 403
 
-        sheet_id = os.getenv("SHEET_ID")
-        sheet_name = data.get("sheet_name")
+        raw_name = data.get("sheet_name")
+        sheet_name = SHEET_ALIAS.get(raw_name, raw_name)
         values = [data.get("values", [])]
 
         service = get_sheets_service(write=True)
         service.spreadsheets().values().append(
-            spreadsheetId=sheet_id,
+            spreadsheetId=os.getenv("SHEET_ID"),
             range=sheet_name,
             valueInputOption="USER_ENTERED",
             insertDataOption="INSERT_ROWS",
             body={"values": values}
         ).execute()
 
-        print("✅ 데이터 쓰기 완료:", values)
-        return jsonify({"result": "✅ Write success", "values": values})
+        print(f"✅ [{raw_name}] → [{sheet_name}] 데이터 쓰기 완료:", values)
+        return jsonify({
+            "result": "✅ Write success",
+            "sheet_name": raw_name,
+            "alias_used": sheet_name,
+            "values": values
+        })
 
     except Exception as e:
         print("❌ write 오류:", e)
@@ -181,7 +198,8 @@ def home():
             "write": "/write",
             "random": "/random.txt",
             "robots": "/robots.txt"
-        }
+        },
+        "sheet_alias_mode": "한글 시트명 유지 + 영문 알리아스 자동 변환"
     })
 
 if __name__ == "__main__":
