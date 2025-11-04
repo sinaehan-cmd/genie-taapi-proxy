@@ -172,13 +172,14 @@ def robots():
     return "User-agent: *\nAllow: /\n", 200, {"Content-Type": "text/plain"}
 
 # ─────────────────────────────────────────────
-# 🧠 Strategy Room – Genie Alert Writer
+# 🧠 Strategy Room – Genie Alert Writer (v2.1)
 # ─────────────────────────────────────────────
 @app.route("/strategy_write", methods=["POST"])
 def strategy_write():
     """
     지니가 RSI, Dominance 등 조건을 감지하면
     genie_alert_log(지니_알람로그)에 자동 기록하는 엔드포인트
+    - 시트 없을 경우 자동 생성 + 헤더 작성
     """
     try:
         data = request.get_json(force=True)
@@ -205,22 +206,69 @@ def strategy_write():
         service = get_sheets_service(write=True)
         sheet_id = os.getenv("SHEET_ID")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        values = [[now, symbol, event, rsi, comment]]
+        row_data = [[now, symbol, event, rsi, comment]]
 
-        service.spreadsheets().values().append(
-            spreadsheetId=sheet_id,
-            range="genie_alert_log",  # ✅ 시트명 (= 지니_알람로그)
-            valueInputOption="USER_ENTERED",
-            insertDataOption="INSERT_ROWS",
-            body={"values": values}
-        ).execute()
+        try:
+            # ✅ 기존 시트에 바로 기록 시도
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range="genie_alert_log",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row_data}
+            ).execute()
+
+        except Exception:
+            # 🚀 시트 없을 경우 자동 생성
+            sheet_def = {
+                "requests": [{"addSheet": {"properties": {"title": "genie_alert_log"}}}]
+            }
+            try:
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=sheet_id, body=sheet_def
+                ).execute()
+
+                # 🧩 genie_alert_log 초기 헤더 자동 생성
+                header_values = [[
+                    "Timestamp",
+                    "Symbol",
+                    "Event",
+                    "RSI",
+                    "Comment"
+                ]]
+                service.spreadsheets().values().update(
+                    spreadsheetId=sheet_id,
+                    range="genie_alert_log!A1:E1",
+                    valueInputOption="RAW",
+                    body={"values": header_values}
+                ).execute()
+                print("🧩 genie_alert_log 초기 헤더 생성 완료 ✅")
+
+                # 데이터 추가 재시도
+                service.spreadsheets().values().append(
+                    spreadsheetId=sheet_id,
+                    range="genie_alert_log",
+                    valueInputOption="USER_ENTERED",
+                    insertDataOption="INSERT_ROWS",
+                    body={"values": row_data}
+                ).execute()
+
+            except Exception as e:
+                print("❌ Sheet creation or append failed:", e)
+                return jsonify({"error": str(e)}), 500
 
         print(f"✅ Strategy event logged: {event} / {comment}")
-        return jsonify({"result": "logged", "event": event, "RSI": rsi, "Dominance": dominance})
+        return jsonify({
+            "result": "logged",
+            "event": event,
+            "RSI": rsi,
+            "Dominance": dominance
+        })
 
     except Exception as e:
         print("❌ strategy_write error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 
 # ─────────────────────────────────────────────
