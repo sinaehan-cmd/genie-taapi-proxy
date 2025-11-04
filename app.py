@@ -198,9 +198,63 @@ def home():
         "routes": {
             "view": "/view-html/<sheet_name>",
             "write": "/write",
-            "test": "/test"
+            "test": "/test
         }
     })
+
+# ─────────────────────────────────────────────
+# 🧠 Core Room – OpenAI API 기반 브리핑 쓰기
+# ─────────────────────────────────────────────
+@app.route("/core_write", methods=["POST"])
+def core_write():
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        prompt = data.get("prompt", "Write a brief market summary for BTC and ETH.")
+        sheet_name = data.get("sheet_name", "genie_briefing_log")
+
+        # 🔑 OpenAI 호출
+        import openai
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+
+        completion = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are Genie, a concise market analyst."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=200
+        )
+
+        summary = completion.choices[0].message.content.strip()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        values = [[now, prompt, summary]]
+
+        # 📗 시트 기록
+        service = get_sheets_service(write=True)
+        service.spreadsheets().values().append(
+            spreadsheetId=os.getenv("SHEET_ID"),
+            range=sheet_name,
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": values}
+        ).execute()
+
+        print(f"✅ Core summary logged to {sheet_name}")
+        return jsonify({
+            "result": "logged",
+            "sheet_name": sheet_name,
+            "summary": summary
+        })
+
+    except Exception as e:
+        print("❌ core_write error:", e)
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
