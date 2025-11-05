@@ -10,14 +10,12 @@ from googleapiclient.discovery import build
 from datetime import datetime, timedelta
 from openai import OpenAI
 
-
 app = Flask(__name__)
 CORS(app)
 
 # === TAAPI.io API 설정 ===
 TAAPI_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbHVlIjoiNjkwNGI5MzU4MDZmZjE2NTFlOGM1YTQ5IiwiaWF0IjoxNzYyMjIyNTY1LCJleHAiOjMzMjY2Njg2NTY1fQ.VJ25E5hAGvSBYBSeDSX8FT7bW1EwhJY27VebneBrNPM"
 BASE_URL = "https://api.taapi.io"
-
 
 # ─────────────────────────────────────────────
 # ⚙️ 환경변수 로드
