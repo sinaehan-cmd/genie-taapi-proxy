@@ -957,6 +957,83 @@ def gti_loop():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
+# 🧭 Genie System Log – Self-Check Loop v1.0
+# ─────────────────────────────────────────────
+@app.route("/system_log", methods=["POST"])
+def system_log():
+    """
+    Genie System 상태 기록 루프
+    - 각 루프 결과를 genie_system_log 시트에 기록
+    - TRUST_OK가 FALSE면 점검 필요 메시지 준비
+    """
+    from datetime import datetime
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        service = get_sheets_service(write=True)
+        sheet_id = os.getenv("SHEET_ID")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 필드 추출
+        module = data.get("module", "unknown")
+        status = data.get("status", "OK")
+        runtime = data.get("runtime", "")
+        trust_ok = data.get("trust_ok", "TRUE")
+        reason = data.get("reason", "")
+        ref_id = data.get("ref_id", "")
+        uptime = data.get("uptime", "")
+
+        log_id = f"SYS.{now.replace(':','-').replace(' ','_')}"
+
+        row_data = [[
+            log_id, now, module, status, runtime,
+            trust_ok, reason, ref_id, uptime
+        ]]
+
+        target_sheet = "genie_system_log"
+        try:
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:I",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row_data}
+            ).execute()
+        except Exception:
+            # 시트 없으면 자동 생성
+            sheet_def = {"requests": [{"addSheet": {"properties": {"title": target_sheet}}}]}
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id, body=sheet_def
+            ).execute()
+            headers = [[
+                "Log_ID", "Timestamp", "Module", "Status",
+                "Runtime(sec)", "TRUST_OK", "Reason", "Reference_ID", "Uptime(%)"
+            ]]
+            service.spreadsheets().values().update(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A1:I1",
+                valueInputOption="RAW",
+                body={"values": headers}
+            ).execute()
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:I",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row_data}
+            ).execute()
+
+        print(f"🧭 System Log recorded: {module} ({status}, TRUST_OK={trust_ok})")
+        return jsonify({"result": "logged", "Log_ID": log_id})
+
+    except Exception as e:
+        print("❌ system_log error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
 # 루트
 # ─────────────────────────────────────────────
 @app.route("/")
