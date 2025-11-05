@@ -681,6 +681,113 @@ def prediction_loop():
     except Exception as e:
         print("❌ prediction_loop error:", e)
         return jsonify({"error": str(e)}), 500
+        
+
+# ─────────────────────────────────────────────
+# 🧮 Genie Formula Store – Versioned Formula Manager v1.0
+# ─────────────────────────────────────────────
+@app.route("/formula_write", methods=["POST"])
+def formula_write():
+    """
+    Genie Formula Store (append-only)
+    - Create or append formula rows to genie_formula_store
+    - Used for internal self-improvement tracking
+    """
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        service = get_sheets_service(write=True)
+        sheet_id = os.getenv("SHEET_ID")
+        target_sheet = "genie_formula_store"
+
+        # 🧩 필드 추출
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        formula_name = data.get("Formula_Name", "")
+        formula = data.get("Formula", "")
+        description = data.get("Description", "")
+        linked_sheet = data.get("Linked_Sheet", "")
+        version = data.get("Version", "v1.0")
+        confidence = data.get("Confidence", "")
+        weight_set = json.dumps(data.get("Weight_Set", {}), ensure_ascii=False)
+        formula_type = data.get("Formula_Type", "")
+        source_ref = data.get("Source_Reference", "")
+        comment = data.get("Comment", "")
+
+        # 📘 행 데이터 구성
+        row_data = [[
+            now,
+            formula_name,
+            formula,
+            description,
+            linked_sheet,
+            version,
+            confidence,
+            weight_set,
+            formula_type,
+            source_ref,
+            comment
+        ]]
+
+        # ✅ 시트 기록
+        try:
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:K",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row_data}
+            ).execute()
+        except Exception:
+            # 🚀 시트 없을 경우 자동 생성 + 헤더 작성
+            sheet_def = {
+                "requests": [{"addSheet": {"properties": {"title": target_sheet}}}]
+            }
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id, body=sheet_def
+            ).execute()
+
+            header_values = [[
+                "Timestamp",
+                "Formula_Name",
+                "Formula",
+                "Description",
+                "Linked_Sheet",
+                "Version",
+                "Confidence",
+                "Weight_Set",
+                "Formula_Type",
+                "Source_Reference",
+                "Comment"
+            ]]
+
+            service.spreadsheets().values().update(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A1:K1",
+                valueInputOption="RAW",
+                body={"values": header_values}
+            ).execute()
+
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:K",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row_data}
+            ).execute()
+
+        print(f"✅ Formula added: {formula_name} ({version})")
+        return jsonify({
+            "result": "logged",
+            "sheet_name": target_sheet,
+            "Formula_Name": formula_name,
+            "Version": version
+        })
+
+    except Exception as e:
+        print("❌ formula_write error:", e)
+        return jsonify({"error": str(e)}), 500
 
 
 
