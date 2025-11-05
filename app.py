@@ -533,14 +533,15 @@ def auto_loop():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
-# 🔮 Genie Prediction Loop (v1.1 for Google Sheets)
+# 🔮 Prediction Loop – Genie 예측 자동 루프 v1.2 (GTI Auto-Trigger 포함)
 # ─────────────────────────────────────────────
 @app.route("/prediction_loop", methods=["POST"])
 def prediction_loop():
     """
-    📈 Genie Prediction Loop
-    - genie_briefing_log 최신 데이터 기반으로 1h 예측값 생성
-    - 예측 결과를 genie_predictions 시트에 기록
+    🧠 Genie Prediction Loop
+    - genie_briefing_log에서 최신 Briefing_ID 기반 예측 생성
+    - genie_predictions 시트에 기록
+    - 완료 후 gti_loop 자동 호출 (GTI 신뢰도 계산)
     """
     try:
         data = request.get_json(force=True)
@@ -550,14 +551,16 @@ def prediction_loop():
         service = get_sheets_service()
         sheet_id = os.getenv("SHEET_ID")
 
-        # ① 최신 브리핑 데이터 가져오기
+        # ────────────────────────────────
+        # ① 최신 브리핑 로그 불러오기
+        # ────────────────────────────────
         src_range = "genie_briefing_log!A:K"
         result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id, range=src_range
         ).execute()
         values = result.get("values", [])
-        if len(values) < 2:
-            return jsonify({"error": "No briefing data"})
+        if not values or len(values) < 2:
+            return jsonify({"error": "No data rows in genie_briefing_log"})
 
         headers = values[0]
         last = values[-1]
@@ -568,75 +571,117 @@ def prediction_loop():
                 return last[idx] if idx < len(last) else ""
             return ""
 
-        # ② 값 추출
-        ref_id = get_val("Briefing_ID")
+        # ────────────────────────────────
+        # ② 데이터 추출
+        # ────────────────────────────────
         btc_price = float(get_val("BTC_Price") or 0)
-        rsi = float(get_val("BTC_RSI") or 0)
-        dom = float(get_val("Dominance") or 0)
-        interp_code = get_val("Interpretation_Code")
+        btc_rsi = float(get_val("BTC_RSI") or 0)
+        dominance = float(get_val("Dominance") or 0)
+        ref_id = get_val("Briefing_ID")
 
-        # ③ 단순 예측 로직 (샘플)
-        pred_price = round(btc_price * (1 + (rsi - 50) / 5000), 2)
-        pred_rsi = round(rsi + ((dom - 56) / 2), 2)
-        pred_dom = round(dom - ((rsi - 50) / 30), 2)
+        # ────────────────────────────────
+        # ③ 예측 계산
+        # ────────────────────────────────
+        from datetime import datetime, timedelta
+        prediction_time = datetime.now()
+        target_time = prediction_time + timedelta(hours=1)
+        predicted_price = round(btc_price * (1 + (btc_rsi - 50) / 1000), 2)
+        predicted_rsi = round(btc_rsi * 0.98 + 1, 2)
+        predicted_dom = round(dominance + (btc_rsi - 50) / 200, 2)
+        confidence = max(0, min(100, 100 - abs(50 - btc_rsi)))
 
-        confidence = max(0, min(100, 100 - abs(50 - rsi)))
-        formula = "LinearDelta(v1.1)"
-        now = datetime.now()
-        pred_time = now.strftime("%Y-%m-%d %H:%M:%S")
-        target_time = (now + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
-        prediction_id = f"P01.1.{now.strftime('%Y-%m-%d-%H:%M')}"
+        prediction_id = f"P01.1.{prediction_time.strftime('%Y-%m-%d-%H:%M')}"
+        interpretation_code = get_val("Interpretation_Code") or "UNKNOWN"
 
+        # ────────────────────────────────
+        # ④ 시트에 기록
+        # ────────────────────────────────
         row_data = [[
-            prediction_id, pred_time, target_time, "BTC_USDT",
-            pred_price, pred_rsi, pred_dom,
-            formula, interp_code, confidence, ref_id, "Auto-predicted by Genie"
+            prediction_id,
+            prediction_time.strftime("%Y-%m-%d %H:%M:%S"),
+            target_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "BTC_USDT",
+            predicted_price,
+            predicted_rsi,
+            predicted_dom,
+            "LinearDelta(v1.1)",
+            interpretation_code,
+            confidence,
+            "",  # Actual_Price
+            "",  # Deviation(%)
+            ref_id,
+            "Auto-predicted by Genie"
         ]]
 
-        # ④ 시트에 기록
         write_service = get_sheets_service(write=True)
         target_sheet = "genie_predictions"
-
         try:
             write_service.spreadsheets().values().append(
                 spreadsheetId=sheet_id,
-                range=f"{target_sheet}!A:L",
+                range=f"{target_sheet}!A:N",
                 valueInputOption="USER_ENTERED",
                 insertDataOption="INSERT_ROWS",
                 body={"values": row_data}
             ).execute()
         except Exception:
-            sheet_def = {
-                "requests": [{"addSheet": {"properties": {"title": target_sheet}}}]
-            }
+            # 🚀 시트 없을 경우 자동 생성
+            sheet_def = {"requests": [{"addSheet": {"properties": {"title": target_sheet}}}]}
             write_service.spreadsheets().batchUpdate(
                 spreadsheetId=sheet_id, body=sheet_def
             ).execute()
+
             header_values = [[
-                "Prediction_ID","Prediction_Time","Target_Time","Symbol",
-                "Predicted_Price","Predicted_RSI","Predicted_Dominance",
-                "Formula","Interpretation_Code","Confidence","Reference_ID","Comment"
+                "Prediction_ID", "Prediction_Time", "Target_Time", "Symbol",
+                "Predicted_Price", "Predicted_RSI", "Predicted_Dominance",
+                "Formula", "Interpretation_Code", "Confidence",
+                "Actual_Price", "Deviation(%)", "Reference_ID", "Comment"
             ]]
             write_service.spreadsheets().values().update(
                 spreadsheetId=sheet_id,
-                range=f"{target_sheet}!A1:L1",
+                range=f"{target_sheet}!A1:N1",
                 valueInputOption="RAW",
                 body={"values": header_values}
             ).execute()
+
             write_service.spreadsheets().values().append(
                 spreadsheetId=sheet_id,
-                range=f"{target_sheet}!A:L",
+                range=f"{target_sheet}!A:N",
                 valueInputOption="USER_ENTERED",
                 insertDataOption="INSERT_ROWS",
                 body={"values": row_data}
             ).execute()
 
-        print(f"✅ Prediction logged: {row_data}")
-        return jsonify({"result": "logged", "Prediction_ID": prediction_id})
+        print(f"✅ Prediction logged: {prediction_id}")
+
+        # ────────────────────────────────
+        # ⑤ 예측 성공 후 GTI 루프 자동 호출
+        # ────────────────────────────────
+        try:
+            auto_call_url = "https://genie-taapi-proxy-1.onrender.com/gti_loop"
+            auto_headers = {"Content-Type": "application/json"}
+            auto_payload = {"access_key": os.getenv("GENIE_ACCESS_KEY")}
+            gti_res = requests.post(auto_call_url, headers=auto_headers, json=auto_payload, timeout=20)
+
+            if gti_res.status_code == 200:
+                print("🔁 GTI loop auto-triggered successfully.")
+            else:
+                print(f"⚠️ GTI auto-trigger failed: {gti_res.status_code}")
+
+        except Exception as e:
+            print(f"⚠️ GTI auto-trigger error: {e}")
+
+        # ────────────────────────────────
+        # ⑥ 결과 반환
+        # ────────────────────────────────
+        return jsonify({
+            "result": "logged",
+            "Prediction_ID": prediction_id
+        })
 
     except Exception as e:
         print("❌ prediction_loop error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 
 # ─────────────────────────────────────────────
@@ -767,8 +812,6 @@ def system_log_write():
         # 🚨 조건 충족 시 경보 발송
         if not trust_ok and check_recent_trust_failures():
             send_system_alert(reason, ref_id)
-
-        return jsonify({"result": "logged", "Log_ID": log_id, "status": status})
 
     except Exception as e:
         print("❌ system_log_write error:", e)
