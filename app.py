@@ -1249,6 +1249,100 @@ def system_log():
         print("❌ system_log error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ─────────────────────────────────────────────
+# 🧠 Genie Learning Loop – Self-Improvement v1.0
+# ─────────────────────────────────────────────
+@app.route("/learning_loop", methods=["POST"])
+def learning_loop():
+    """
+    Genie Self-Learning Loop v1.0
+    - 분석: 최근 GTI Score < 85 구간 탐지
+    - 보정: α 보정 계수 재계산 및 Formula 업데이트
+    - 출력: 수정된 Formula 새 버전 등록
+    """
+    from datetime import datetime
+    import math
+
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        read_service = get_sheets_service()
+        write_service = get_sheets_service(write=True)
+        sheet_id = os.getenv("SHEET_ID")
+
+        # ① GTI 데이터 읽기
+        gti_rows = read_service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range="genie_gti_log!A:J"
+        ).execute().get("values", [])[1:]
+
+        if not gti_rows:
+            return jsonify({"error": "No GTI data"})
+
+        last = gti_rows[-1]
+        gti_score = float(last[5]) if len(last) > 5 else 100
+
+        # ② 조건 확인
+        if gti_score >= 85:
+            return jsonify({
+                "result": "stable",
+                "GTI_Score": gti_score,
+                "action": "No update required"
+            })
+
+        # ③ 보정 계수 계산 (α)
+        alpha = round(1 + (85 - gti_score) / 100, 3)
+        new_formula = f"(100 - avg_deviation * {alpha})"
+        new_version = "v1.1"
+
+        # ④ 새 Formula 등록
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        row = [[
+            now,
+            "GTI_Daily_Score",
+            new_formula,
+            f"GTI Score {gti_score} 기반 자동 보정",
+            "genie_gti_log",
+            new_version,
+            gti_score,
+            '{"RSI": 0.3, "Dominance": 0.4, "MVRV": 0.3}',
+            "Evaluate",
+            "Learning Loop v1.0",
+            "자동 보정 루프 적용"
+        ]]
+
+        write_service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="genie_formula_store!A:K",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": row}
+        ).execute()
+
+        # ⑤ 공개 요약본 갱신
+        try:
+            requests.post(
+                "https://genie-taapi-proxy-1.onrender.com/formula_publish",
+                json={"access_key": os.getenv("GENIE_ACCESS_KEY")},
+                timeout=15
+            )
+        except Exception as e:
+            print("⚠️ formula_publish auto-trigger failed:", e)
+
+        print(f"✅ Learning loop applied – α ={alpha}, GTI={gti_score}")
+        return jsonify({
+            "result": "updated",
+            "GTI_Score": gti_score,
+            "alpha": alpha,
+            "new_formula": new_formula,
+            "new_version": new_version
+        })
+
+    except Exception as e:
+        print("❌ learning_loop error:", e)
+        return jsonify({"error": str(e)}), 500
+
 
 # ─────────────────────────────────────────────
 # 루트
