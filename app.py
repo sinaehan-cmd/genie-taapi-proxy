@@ -534,6 +534,113 @@ def auto_loop():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
+# 🔮 Genie Prediction Loop (v1.1 for Google Sheets)
+# ─────────────────────────────────────────────
+@app.route("/prediction_loop", methods=["POST"])
+def prediction_loop():
+    """
+    📈 Genie Prediction Loop
+    - genie_briefing_log 최신 데이터 기반으로 1h 예측값 생성
+    - 예측 결과를 genie_predictions 시트에 기록
+    """
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+
+        # ① 최신 브리핑 데이터 가져오기
+        src_range = "genie_briefing_log!A:K"
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range=src_range
+        ).execute()
+        values = result.get("values", [])
+        if len(values) < 2:
+            return jsonify({"error": "No briefing data"})
+
+        headers = values[0]
+        last = values[-1]
+
+        def get_val(col):
+            if col in headers:
+                idx = headers.index(col)
+                return last[idx] if idx < len(last) else ""
+            return ""
+
+        # ② 값 추출
+        ref_id = get_val("Briefing_ID")
+        btc_price = float(get_val("BTC_Price") or 0)
+        rsi = float(get_val("BTC_RSI") or 0)
+        dom = float(get_val("Dominance") or 0)
+        interp_code = get_val("Interpretation_Code")
+
+        # ③ 단순 예측 로직 (샘플)
+        pred_price = round(btc_price * (1 + (rsi - 50) / 5000), 2)
+        pred_rsi = round(rsi + ((dom - 56) / 2), 2)
+        pred_dom = round(dom - ((rsi - 50) / 30), 2)
+
+        confidence = max(0, min(100, 100 - abs(50 - rsi)))
+        formula = "LinearDelta(v1.1)"
+        now = datetime.now()
+        pred_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        target_time = (now + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+        prediction_id = f"P01.1.{now.strftime('%Y-%m-%d-%H:%M')}"
+
+        row_data = [[
+            prediction_id, pred_time, target_time, "BTC_USDT",
+            pred_price, pred_rsi, pred_dom,
+            formula, interp_code, confidence, ref_id, "Auto-predicted by Genie"
+        ]]
+
+        # ④ 시트에 기록
+        write_service = get_sheets_service(write=True)
+        target_sheet = "genie_predictions"
+
+        try:
+            write_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:L",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row_data}
+            ).execute()
+        except Exception:
+            sheet_def = {
+                "requests": [{"addSheet": {"properties": {"title": target_sheet}}}]
+            }
+            write_service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id, body=sheet_def
+            ).execute()
+            header_values = [[
+                "Prediction_ID","Prediction_Time","Target_Time","Symbol",
+                "Predicted_Price","Predicted_RSI","Predicted_Dominance",
+                "Formula","Interpretation_Code","Confidence","Reference_ID","Comment"
+            ]]
+            write_service.spreadsheets().values().update(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A1:L1",
+                valueInputOption="RAW",
+                body={"values": header_values}
+            ).execute()
+            write_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:L",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row_data}
+            ).execute()
+
+        print(f"✅ Prediction logged: {row_data}")
+        return jsonify({"result": "logged", "Prediction_ID": prediction_id})
+
+    except Exception as e:
+        print("❌ prediction_loop error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
 # ⚙️ System Log Writer + Auto Alert (v1.2)
 # ─────────────────────────────────────────────
 @app.route("/system_log_write", methods=["POST"])
