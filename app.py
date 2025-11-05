@@ -533,6 +533,140 @@ def auto_loop():
         print("❌ auto_loop error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ─────────────────────────────────────────────
+# ⚙️ System Log Writer + Auto Alert (v1.2)
+# ─────────────────────────────────────────────
+@app.route("/system_log_write", methods=["POST"])
+def system_log_write():
+    """
+    지니 시스템 상태 자동 기록 모듈 (Auto Alert 포함)
+    - auto_loop 등 주요 루프 실행 후 결과 기록
+    - TRUST_OK=FALSE 3회 연속 감지 시 자동 경보 발송
+    """
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        # 기본 입력값
+        module = data.get("module", "auto_loop")
+        status = data.get("status", "✅ SUCCESS")
+        runtime = float(data.get("runtime", 0))
+        trust_ok = data.get("trust_ok", True)
+        reason = data.get("reason", "")
+        ref_id = data.get("ref_id", "")
+        uptime = data.get("uptime", "99.9%")
+        next_slot = data.get("next_slot", "")
+
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_id = f"SYS.1.{now.replace(':','-')}"
+
+        row_data = [[
+            log_id,
+            now,
+            module,
+            status,
+            runtime,
+            str(trust_ok).upper(),
+            reason,
+            ref_id,
+            uptime,
+            next_slot
+        ]]
+
+        service = get_sheets_service(write=True)
+        sheet_id = os.getenv("SHEET_ID")
+        target_sheet = "genie_system_log"
+
+        # ✅ 시트에 로그 추가
+        try:
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:J",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row_data}
+            ).execute()
+        except Exception:
+            # 🚀 시트 없을 경우 자동 생성 + 헤더 작성
+            sheet_def = {
+                "requests": [{"addSheet": {"properties": {"title": target_sheet}}}]
+            }
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id, body=sheet_def
+            ).execute()
+
+            header_values = [[
+                "Log_ID", "Timestamp", "Module", "Status",
+                "Runtime(sec)", "TRUST_OK", "Reason",
+                "Ref_ID", "Uptime%", "Next_Slot"
+            ]]
+            service.spreadsheets().values().update(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A1:J1",
+                valueInputOption="RAW",
+                body={"values": header_values}
+            ).execute()
+
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:J",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row_data}
+            ).execute()
+
+        print(f"✅ System log recorded: {status} / {runtime}s / TRUST={trust_ok}")
+
+        # ─────────────────────────────────────────────
+        # 🚨 연속 실패 감지 및 경보 발송
+        # ─────────────────────────────────────────────
+        def check_recent_trust_failures():
+            try:
+                result = service.spreadsheets().values().get(
+                    spreadsheetId=sheet_id, range=f"{target_sheet}!A:J"
+                ).execute()
+                values = result.get("values", [])
+                if len(values) < 4:  # 헤더 제외 최소 3행 필요
+                    return False
+                recent = [row[5].upper() for row in values[-3:]]  # TRUST_OK 열
+                return all(v == "FALSE" for v in recent)
+            except Exception as e:
+                print("⚠️ check_recent_trust_failures error:", e)
+                return False
+
+        def send_system_alert(reason, ref_id=""):
+            try:
+                alert_message = (
+                    f"⚠️ [Genie System Alert]\n"
+                    f"연속 3회 신뢰 불가 상태 감지.\n"
+                    f"이유: {reason}\n"
+                    f"참조키: {ref_id}\n"
+                    f"조치: 자동 예측 중지 및 진단 루프 진입."
+                )
+                # Telegram 예시 (선택사항)
+                TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+                CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+                if TELEGRAM_TOKEN and CHAT_ID:
+                    requests.post(
+                        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                        json={"chat_id": CHAT_ID, "text": alert_message},
+                        timeout=10
+                    )
+                print("🚨 System Alert Triggered:", alert_message)
+            except Exception as e:
+                print("❌ send_system_alert error:", e)
+
+        # 🚨 조건 충족 시 경보 발송
+        if not trust_ok and check_recent_trust_failures():
+            send_system_alert(reason, ref_id)
+
+        return jsonify({"result": "logged", "Log_ID": log_id, "status": status})
+
+    except Exception as e:
+        print("❌ system_log_write error:", e)
+        return jsonify({"error": str(e)}), 500
 
 
 # ─────────────────────────────────────────────
