@@ -1344,6 +1344,258 @@ def learning_loop():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
+# 🧠 Genie Learning + Analysis + Memory Loop v2.0
+# 기억복원형 자기보완 루프
+# ─────────────────────────────────────────────
+
+# ✅ 세션 메모리 읽기
+def load_session_memory(session="default"):
+    try:
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range="genie_session_memory!A:E"
+        ).execute()
+        values = result.get("values", [])
+        if len(values) < 2:
+            return {}
+        headers = values[0]
+        for row in values[1:]:
+            if row[0] == session:
+                return dict(zip(headers, row))
+        return {}
+    except Exception as e:
+        print("⚠️ load_session_memory error:", e)
+        return {}
+
+# ✅ 세션 메모리 저장
+def save_session_memory(memory: dict):
+    try:
+        service = get_sheets_service(write=True)
+        sheet_id = os.getenv("SHEET_ID")
+        row = [
+            memory.get("session", "default"),
+            memory.get("latest_GTI", ""),
+            memory.get("alpha", ""),
+            memory.get("formula_version", ""),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        ]
+        try:
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range="genie_session_memory!A:E",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": [row]}
+            ).execute()
+        except Exception:
+            sheet_def = {"requests": [{"addSheet": {"properties": {"title": "genie_session_memory"}}}]}
+            service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=sheet_def).execute()
+            header = [["session", "latest_GTI", "alpha", "formula_version", "last_update"]]
+            service.spreadsheets().values().update(
+                spreadsheetId=sheet_id,
+                range="genie_session_memory!A1:E1",
+                valueInputOption="RAW",
+                body={"values": header}
+            ).execute()
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range="genie_session_memory!A:E",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": [row]}
+            ).execute()
+        print(f"🧠 Session memory saved for {memory.get('session')}")
+    except Exception as e:
+        print("❌ save_session_memory error:", e)
+
+
+# ─────────────────────────────────────────────
+# 🔁 learning_loop – GTI 기반 수식 보정 루프
+# ─────────────────────────────────────────────
+@app.route("/learning_loop", methods=["POST"])
+def learning_loop():
+    """
+    최근 GTI 결과를 기반으로 α(보정계수)를 자동 조정하고
+    새로운 수식을 genie_formula_store / genie_learning_log 에 저장
+    """
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+
+        # ① 최신 GTI 값 가져오기
+        gti_result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range="genie_gti_log!A:J"
+        ).execute()
+        values = gti_result.get("values", [])
+        if len(values) < 2:
+            return jsonify({"error": "No GTI data"})
+        headers = values[0]
+        last = values[-1]
+        def val(col): return last[headers.index(col)] if col in headers else ""
+        current_gti = float(val("GTI_Score") or 0)
+        avg_dev = float(val("Average_Deviation(%)") or 0)
+
+        # ② 기존 세션 메모리 불러오기
+        memory = load_session_memory("default")
+        prev_alpha = float(memory.get("alpha", 1.0)) if memory else 1.0
+
+        # ③ 보정 로직
+        if current_gti < 85:
+            alpha = round(prev_alpha * (1 + (85 - current_gti) / 200), 4)
+        elif current_gti > 95:
+            alpha = round(prev_alpha * 0.98, 4)
+        else:
+            alpha = prev_alpha
+
+        new_formula = f"(100 - avg_dev * {alpha})"
+        new_version = f"v{datetime.now().strftime('%Y%m%d%H%M')}"
+        confidence = round(min(100, 100 - abs(90 - current_gti)), 2)
+
+        # ④ formula_store에 새 수식 기록
+        write_service = get_sheets_service(write=True)
+        formula_row = [[
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "GTI_Auto_Adjust",
+            new_formula,
+            "자동 보정형 GTI 계산식",
+            "genie_gti_log",
+            new_version,
+            confidence,
+            f'{{"alpha": {alpha}, "avg_dev": {avg_dev}}}',
+            "Auto-Learning",
+            "Genie System v2",
+            "자동보정루프"
+        ]]
+        write_service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="genie_formula_store!A:K",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": formula_row}
+        ).execute()
+
+        # ⑤ learning_log 기록
+        learning_row = [[
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            current_gti, alpha, new_formula, confidence, new_version, "Auto"
+        ]]
+        try:
+            write_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range="genie_learning_log!A:G",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": learning_row}
+            ).execute()
+        except Exception:
+            sheet_def = {"requests": [{"addSheet": {"properties": {"title": "genie_learning_log"}}}]}
+            write_service.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body=sheet_def).execute()
+            header = [["Timestamp", "GTI", "Alpha", "Formula", "Confidence", "Version", "Source"]]
+            write_service.spreadsheets().values().update(
+                spreadsheetId=sheet_id,
+                range="genie_learning_log!A1:G1",
+                valueInputOption="RAW",
+                body={"values": header}
+            ).execute()
+            write_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range="genie_learning_log!A:G",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": learning_row}
+            ).execute()
+
+        # ⑥ 세션 메모리 갱신
+        save_session_memory({
+            "session": "default",
+            "latest_GTI": current_gti,
+            "alpha": alpha,
+            "formula_version": new_version
+        })
+
+        print(f"✅ Learning loop completed: GTI={current_gti}, α={alpha}, v={new_version}")
+        return jsonify({
+            "result": "logged",
+            "GTI": current_gti,
+            "alpha": alpha,
+            "version": new_version
+        })
+
+    except Exception as e:
+        print("❌ learning_loop error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
+# 📊 analysis_loop – GTI 트렌드 분석 및 요약
+# ─────────────────────────────────────────────
+@app.route("/analysis_loop", methods=["POST"])
+def analysis_loop():
+    """
+    최근 GTI 트렌드와 학습 결과를 분석해 요약을 작성,
+    genie_learning_log 및 system_log에 반영.
+    """
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+
+        gti_result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range="genie_gti_log!A:J"
+        ).execute()
+        values = gti_result.get("values", [])
+        if len(values) < 6:
+            return jsonify({"error": "Not enough GTI data"})
+        last5 = [float(r[4]) for r in values[-5:]]
+        avg_gti = round(sum(last5) / len(last5), 2)
+        trend = "Improving" if last5[-1] > last5[0] else "Declining"
+
+        # 세션 메모리에서 α 복원
+        memory = load_session_memory("default")
+        alpha = memory.get("alpha", "N/A")
+
+        summary = f"GTI 평균 {avg_gti} ({trend}), α={alpha}"
+
+        # 결과 기록
+        write_service = get_sheets_service(write=True)
+        analysis_row = [[
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            avg_gti,
+            trend,
+            alpha,
+            summary
+        ]]
+        try:
+            write_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range="genie_learning_log!I:M",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": analysis_row}
+            ).execute()
+        except Exception as e:
+            print("⚠️ analysis append error:", e)
+
+        print(f"🧩 Analysis: {summary}")
+        return jsonify({
+            "result": "analyzed",
+            "summary": summary
+        })
+
+    except Exception as e:
+        print("❌ analysis_loop error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
 # 🔄 Genie Unified Master Loop v1.0
 # ─────────────────────────────────────────────
 @app.route("/genie_master_loop", methods=["POST"])
