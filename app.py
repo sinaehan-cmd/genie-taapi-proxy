@@ -1343,6 +1343,55 @@ def learning_loop():
         print("❌ learning_loop error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ─────────────────────────────────────────────
+# 🔄 Genie Unified Master Loop v1.0
+# ─────────────────────────────────────────────
+@app.route("/genie_master_loop", methods=["POST"])
+def genie_master_loop():
+    """
+    Run full Genie pipeline sequentially:
+    1️⃣ auto_loop → 2️⃣ prediction_loop → 3️⃣ learning_loop
+    Each stage must succeed before moving to the next.
+    """
+    import time
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        base_url = "https://genie-taapi-proxy-1.onrender.com"
+        headers = {"Content-Type": "application/json"}
+        payload = {"access_key": os.getenv("GENIE_ACCESS_KEY")}
+
+        # 1️⃣ auto_loop
+        print("▶️ Step 1: auto_loop start")
+        auto_res = requests.post(f"{base_url}/auto_loop", headers=headers, json=payload, timeout=30)
+        print("✅ auto_loop done:", auto_res.status_code)
+        time.sleep(3)
+
+        # 2️⃣ prediction_loop
+        print("▶️ Step 2: prediction_loop start")
+        pred_res = requests.post(f"{base_url}/prediction_loop", headers=headers, json=payload, timeout=30)
+        print("✅ prediction_loop done:", pred_res.status_code)
+        time.sleep(3)
+
+        # 3️⃣ learning_loop
+        print("▶️ Step 3: learning_loop start")
+        learn_res = requests.post(f"{base_url}/learning_loop", headers=headers, json=payload, timeout=30)
+        print("✅ learning_loop done:", learn_res.status_code)
+
+        return jsonify({
+            "result": "pipeline_complete",
+            "auto_loop": auto_res.json(),
+            "prediction_loop": pred_res.json(),
+            "learning_loop": learn_res.json()
+        })
+
+    except Exception as e:
+        print("❌ genie_master_loop error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
 
 # ─────────────────────────────────────────────
 # 루트
