@@ -88,6 +88,53 @@ def taapi_test():
         print("❌ TAAPI test error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ─────────────────────────────────────────────
+# 🎯 Indicator Endpoint (for Google Sheets)
+# ─────────────────────────────────────────────
+@app.route("/indicator")
+def indicator():
+    """Return TAAPI indicator value as JSON (for Genie Sheets)."""
+    try:
+        indicator = request.args.get("indicator", "rsi")
+        symbol = request.args.get("symbol", "BTC/USDT")
+        interval = request.args.get("interval", "1h")
+        period = request.args.get("period")
+
+        params = {
+            "secret": TAAPI_KEY,
+            "exchange": "binance",
+            "symbol": symbol,
+            "interval": interval
+        }
+        if period:
+            params["period"] = period
+
+        url = f"{BASE_URL}/{indicator}"
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
+
+        # 정규화된 출력
+        if "value" in data:
+            return jsonify({
+                "indicator": indicator,
+                "symbol": symbol,
+                "interval": interval,
+                "value": data["value"]
+            })
+        elif "valueMACD" in data:
+            return jsonify({
+                "indicator": indicator,
+                "symbol": symbol,
+                "interval": interval,
+                "value": data["valueMACD"]
+            })
+        else:
+            return jsonify({"error": "no_value", "raw": data}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 
 # ─────────────────────────────────────────────
 # 🌐 HTML 뷰
