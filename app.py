@@ -774,6 +774,144 @@ def system_log_write():
         print("❌ system_log_write error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ─────────────────────────────────────────────
+# 📈 Genie GTI Loop – Prediction Accuracy Evaluator v1.0
+# ─────────────────────────────────────────────
+@app.route("/gti_loop", methods=["POST"])
+def gti_loop():
+    """
+    Compare predicted vs actual prices and record Genie Trust Index (GTI)
+    - Reads from genie_predictions & genie_data_v5
+    - Calculates average deviation and GTI score
+    - Logs result to genie_gti_log
+    """
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+
+        # ────────────────────────────────
+        # ① Read prediction data
+        # ────────────────────────────────
+        pred_result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range="genie_predictions!A:N"
+        ).execute()
+        pred_values = pred_result.get("values", [])
+        if len(pred_values) < 2:
+            return jsonify({"error": "No prediction data"})
+
+        headers = pred_values[0]
+        last_preds = pred_values[-5:]  # 최근 5개 예측만 평가
+        deviations = []
+
+        # ────────────────────────────────
+        # ② Load latest actual BTC price from genie_data_v5
+        # ────────────────────────────────
+        data_result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range="genie_data_v5!A:Z"
+        ).execute()
+        data_values = data_result.get("values", [])
+        if len(data_values) < 2:
+            return jsonify({"error": "No market data"})
+
+        data_headers = data_values[0]
+        last_data = data_values[-1]
+        actual_price = float(last_data[data_headers.index("BTC/USD")])
+
+        # ────────────────────────────────
+        # ③ Calculate deviations
+        # ────────────────────────────────
+        for p in last_preds:
+            try:
+                pred_price = float(p[headers.index("Predicted_Price")])
+                dev = abs(pred_price - actual_price) / actual_price * 100
+                deviations.append(dev)
+            except Exception:
+                continue
+
+        if not deviations:
+            return jsonify({"error": "No valid deviations"})
+
+        avg_dev = round(sum(deviations) / len(deviations), 2)
+        gti_score = max(0, min(100, 100 - avg_dev))
+        trend = "Stable" if avg_dev < 2 else "Volatile"
+
+        # ────────────────────────────────
+        # ④ Write GTI log
+        # ────────────────────────────────
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        gti_id = f"GTI.{now.replace(':','-').replace(' ','_')}"
+        row_data = [
+            gti_id,
+            now,
+            "1h",
+            len(deviations),
+            avg_dev,
+            gti_score,
+            "GTI=(100-AvgDeviation)",
+            "Last 5 Predictions",
+            trend,
+            "Auto-calculated by Genie"
+        ]
+
+        write_service = get_sheets_service(write=True)
+        target_sheet = "genie_gti_log"
+
+        try:
+            write_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:J",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": [row_data]}
+            ).execute()
+        except Exception:
+            # Create sheet if missing
+            sheet_def = {"requests": [{"addSheet": {"properties": {"title": target_sheet}}}]}
+            write_service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id, body=sheet_def
+            ).execute()
+            header_values = [[
+                "GTI_ID",
+                "Timestamp",
+                "Evaluation_Period",
+                "Sample_Count",
+                "Average_Deviation(%)",
+                "GTI_Score",
+                "Formula",
+                "Source_Predictions",
+                "Trend",
+                "Comment"
+            ]]
+            write_service.spreadsheets().values().update(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A1:J1",
+                valueInputOption="RAW",
+                body={"values": header_values}
+            ).execute()
+            write_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:J",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": [row_data]}
+            ).execute()
+
+        print(f"✅ GTI Logged: {gti_id} (Score={gti_score}, AvgDev={avg_dev}%)")
+        return jsonify({
+            "result": "logged",
+            "GTI_ID": gti_id,
+            "GTI_Score": gti_score,
+            "Average_Deviation(%)": avg_dev
+        })
+
+    except Exception as e:
+        print("❌ gti_loop error:", e)
+        return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
 # 루트
