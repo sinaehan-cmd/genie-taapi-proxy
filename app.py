@@ -789,6 +789,116 @@ def formula_write():
         print("❌ formula_write error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ─────────────────────────────────────────────
+# 🌐 Genie Formula Publisher – safe public mirror v1.1
+# ─────────────────────────────────────────────
+@app.route("/formula_publish", methods=["POST"])
+def formula_publish():
+    """
+    Create or update a safe public summary of Genie formulas.
+    - Reads from genie_formula_store
+    - Writes summarized version to genie_formula_public
+    - Creates the sheet & header automatically if missing
+    """
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        read_service = get_sheets_service()
+        write_service = get_sheets_service(write=True)
+        sheet_id = os.getenv("SHEET_ID")
+        target_sheet = "genie_formula_public"
+
+        # ① 내부 수식 저장소 읽기
+        try:
+            src = read_service.spreadsheets().values().get(
+                spreadsheetId=sheet_id,
+                range="genie_formula_store!A:K"
+            ).execute()
+            rows = src.get("values", [])[1:]  # 헤더 제외
+        except Exception as e:
+            return jsonify({"error": f"Cannot read formula_store: {e}"}), 500
+
+        # ② GTI 평균 불러오기 (최근 5개 기준)
+        try:
+            gti_data = read_service.spreadsheets().values().get(
+                spreadsheetId=sheet_id,
+                range="genie_gti_log!A:J"
+            ).execute().get("values", [])[1:]
+            avg_gti = round(
+                sum(float(r[5]) for r in gti_data[-5:] if len(r) > 5 and r[5])
+                / len(gti_data[-5:]), 2
+            ) if gti_data else 0
+        except Exception:
+            avg_gti = 0
+
+        # ③ 공개용 데이터 구성 (최근 10개만)
+        public_data = []
+        for r in rows[-10:]:
+            public_data.append([
+                r[0],  # Timestamp
+                r[1],  # Formula_Name
+                "(100 - avg_dev * α)",  # Expression_Simplified
+                "RSI, Dominance, MVRV",  # Variable_Set
+                r[7] if len(r) > 7 else "{}",  # Weight_Set
+                r[8] if len(r) > 8 else "",  # Formula_Type
+                avg_gti,
+                r[5] if len(r) > 5 else "v1.0",  # Version
+                r[4] if len(r) > 4 else "",  # Linked_Sheet
+                r[10] if len(r) > 10 else ""  # Note/Comment
+            ])
+
+        # ④ genie_formula_public 시트 생성 + 헤더 작성 (없을 경우)
+        try:
+            # 기존 시트 데이터 삭제 (업데이트 목적)
+            write_service.spreadsheets().values().clear(
+                spreadsheetId=sheet_id, range=f"{target_sheet}!A:J"
+            ).execute()
+        except Exception:
+            # 🚀 시트가 없으면 새로 생성
+            sheet_def = {
+                "requests": [{"addSheet": {"properties": {"title": target_sheet}}}]
+            }
+            write_service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id, body=sheet_def
+            ).execute()
+
+        # 헤더 작성
+        header = [[
+            "Timestamp", "Formula_Name", "Expression_Simplified",
+            "Variable_Set", "Weight_Set", "Formula_Type",
+            "GTI_Avg(%)", "Version", "Linked_Sheet", "Note"
+        ]]
+        write_service.spreadsheets().values().update(
+            spreadsheetId=sheet_id,
+            range=f"{target_sheet}!A1:J1",
+            valueInputOption="RAW",
+            body={"values": header}
+        ).execute()
+
+        # ⑤ 데이터 추가
+        if public_data:
+            write_service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range=f"{target_sheet}!A:J",
+                valueInputOption="USER_ENTERED",
+                insertDataOption="INSERT_ROWS",
+                body={"values": public_data}
+            ).execute()
+
+        print(f"✅ genie_formula_public updated ({len(public_data)} rows).")
+        return jsonify({
+            "result": "published",
+            "count": len(public_data),
+            "sheet_name": target_sheet
+        })
+
+    except Exception as e:
+        print("❌ formula_publish error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
 
 
 # ─────────────────────────────────────────────
