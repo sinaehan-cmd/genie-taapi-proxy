@@ -227,56 +227,68 @@ def learning_loop_internal():
     except Exception as e:
         print("❌ learning_loop_internal error:", e)
         return jsonify({"error": str(e)}), 500
+# ─────────────────────────────────────────────
+# 🧠 Genie Main Loop (Async Version v2.1)
+# ─────────────────────────────────────────────
+import threading, time, requests, os
+from flask import jsonify, request
 
-# ─────────────────────────────────────────────
-# 🔁 Genie Main Loop – Prediction → GTI → Learning 자동 순환
-# ─────────────────────────────────────────────
+def run_full_cycle(base_url, headers, body):
+    """백그라운드에서 전체 루프 실행"""
+    try:
+        print("🚀 Genie main loop started in background")
+
+        # 1️⃣ Prediction Loop
+        r1 = requests.post(f"{base_url}/prediction_loop", json=body, headers=headers, timeout=20)
+        print("✅ prediction_loop:", r1.status_code, r1.text)
+
+        time.sleep(5)
+
+        # 2️⃣ GTI Loop
+        r2 = requests.post(f"{base_url}/gti_loop", json=body, headers=headers, timeout=20)
+        print("✅ gti_loop:", r2.status_code, r2.text)
+
+        time.sleep(5)
+
+        # 3️⃣ Learning Loop
+        r3 = requests.post(f"{base_url}/learning_loop_internal", json=body, headers=headers, timeout=20)
+        print("✅ learning_loop_internal:", r3.status_code, r3.text)
+
+        print("🧠 Genie Main Loop completed successfully ✅")
+
+    except Exception as e:
+        print("❌ main_loop background error:", str(e))
+
+
 @app.route("/main_loop", methods=["POST"])
 def main_loop():
-    """전체 루프 자동 실행 (예측 → GTI → 자기학습)"""
+    """빠른 응답형 메인 루프 (Render Timeout 회피용)"""
     try:
         data = request.get_json(force=True)
-        if data.get("access_key") != GENIE_ACCESS_KEY:
+        access_key = data.get("access_key")
+        if access_key != os.getenv("GENIE_ACCESS_KEY"):
             return jsonify({"error": "Invalid access key"}), 403
 
+        base_url = os.getenv("RENDER_BASE_URL", "https://genie-taapi-proxy-1.onrender.com")
         headers = {"Content-Type": "application/json"}
-        body = {"access_key": GENIE_ACCESS_KEY}
+        body = {"access_key": os.getenv("GENIE_ACCESS_KEY")}
 
-        results = {}
-        pred = requests.post(f"{RENDER_BASE_URL}/prediction_loop", json=body, headers=headers).json()
-        results["prediction_loop"] = pred
-        print(f"✅ Prediction loop completed: {pred}")
+        # 백그라운드에서 전체 루프 실행
+        thread = threading.Thread(target=run_full_cycle, args=(base_url, headers, body))
+        thread.daemon = True
+        thread.start()
 
-        time.sleep(5)
-        gti = requests.post(f"{RENDER_BASE_URL}/gti_loop", json=body, headers=headers).json()
-        results["gti_loop"] = gti
-        print(f"✅ GTI loop completed: {gti}")
+        # 즉시 응답 반환 (Render Timeout 방지)
+        return jsonify({
+            "status": "processing_started",
+            "message": "🧠 Genie main loop running in background",
+            "note": "check logs or sheets for progress"
+        })
 
-        time.sleep(5)
-        learn = requests.post(f"{RENDER_BASE_URL}/learning_loop_internal", json=body, headers=headers).json()
-        results["learning_loop_internal"] = learn
-        print(f"✅ Learning loop completed: {learn}")
-
-        summary = {
-            "result": "main_loop_complete",
-            "steps": {
-                "prediction": pred.get("result"),
-                "GTI": gti.get("result"),
-                "learning": learn.get("result")
-            },
-            "GTI_Score": gti.get("GTI_Score"),
-            "avg_GTI": learn.get("avg_GTI"),
-            "learning_rate": learn.get("learning_rate"),
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        print("🧠 Genie Main Loop Completed:", summary)
-        send_telegram(f"📊 Genie Main Loop 완료\nGTI: {gti.get('GTI_Score')}\n"
-                      f"avg_GTI: {learn.get('avg_GTI')}\nrate: {learn.get('learning_rate')}\n"
-                      f"time: {summary['timestamp']}")
-        return jsonify(summary)
     except Exception as e:
         print("❌ main_loop error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 # ─────────────────────────────────────────────
 # 🧾 시스템 헬스체크
