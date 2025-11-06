@@ -172,7 +172,7 @@ def view_sheet_html(sheet_name):
         return f"<h3>오류: {e}</h3>", 500
         
 # ─────────────────────────────────────────────
-# 🌐 Smart JSON 뷰어 (for Genie System)
+# 🌐 Smart JSON 뷰어 (Render 호환 + 지니 접근 허용 버전)
 # ─────────────────────────────────────────────
 @app.route("/view-json/<path:sheet_name>")
 def view_sheet_json(sheet_name):
@@ -200,7 +200,11 @@ def view_sheet_json(sheet_name):
         ).execute()
         values = result.get("values", [])
         if not values or len(values) < 2:
-            return jsonify({"error": "No data found", "sheet": decoded}), 404
+            return app.response_class(
+                response=json.dumps({"error": "No data found", "sheet": decoded}, ensure_ascii=False, indent=2),
+                status=404,
+                mimetype="text/html"  # ✅ Render에서 접근 허용되도록 HTML로 지정
+            )
 
         headers = values[0]
         rows = []
@@ -227,11 +231,27 @@ def view_sheet_json(sheet_name):
         }
 
         print(f"✅ JSON view generated for {decoded} ({len(rows)} rows)")
-        return jsonify(response), 200
+
+        # 🔸 HTML 형태로 JSON 포장 (GPT/브라우저 접근 호환)
+        html_wrapper = f"""
+        <!DOCTYPE html>
+        <html lang='en'>
+        <head><meta charset='utf-8'><title>{decoded}</title></head>
+        <body>
+        <pre style='font-family: monospace; white-space: pre-wrap;'>{json.dumps(response, ensure_ascii=False, indent=2)}</pre>
+        </body></html>
+        """
+
+        return app.response_class(
+            response=html_wrapper,
+            status=200,
+            mimetype="text/html"
+        )
 
     except Exception as e:
         print("❌ view-json error:", e)
-        return jsonify({"error": str(e), "sheet": sheet_name}), 500
+        error_html = f"<h3>❌ 오류 발생:</h3><pre>{str(e)}</pre>"
+        return app.response_class(response=error_html, status=500, mimetype="text/html")
 
 
 
