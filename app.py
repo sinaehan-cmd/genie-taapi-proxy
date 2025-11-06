@@ -627,6 +627,60 @@ def system_log():
 
 
 # ─────────────────────────────────────────────
+# 🚨 Alert Log + Telegram Auto Send
+# ─────────────────────────────────────────────
+@app.route("/alert_log", methods=["POST"])
+def alert_log():
+    """Genie Alert 로그 기록 및 텔레그램 자동 전송"""
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        service = get_sheets_service(write=True)
+        sheet_id = os.getenv("SHEET_ID")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        alert_id = f"ALERT.{now.replace(':','-').replace(' ','_')}"
+        level = data.get("level", "INFO")
+        symbol = data.get("symbol", "N/A")
+        message = data.get("message", "No message")
+        source = data.get("source", "unknown")
+        trigger = data.get("trigger", "manual")
+        trust = data.get("trust", "TRUE")
+
+        row_data = [[
+            alert_id, now, level, symbol, message,
+            source, trigger, trust
+        ]]
+
+        # 구글 시트에 기록
+        service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="genie_alert_log!A:H",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": row_data}
+        ).execute()
+
+        # 텔레그램 메시지 자동 전송
+        alert_msg = f"🚨 <b>Genie Alert</b>\n" \
+                    f"📊 Symbol: {symbol}\n" \
+                    f"⚙️ Source: {source}\n" \
+                    f"🧩 Level: {level}\n" \
+                    f"💬 Message: {message}\n" \
+                    f"⏱ Time: {now}"
+
+        send_telegram_message(alert_msg)
+        print(f"📤 Telegram Alert sent: {alert_id}")
+
+        return jsonify({"result": "logged_and_sent", "Alert_ID": alert_id})
+    except Exception as e:
+        print("❌ alert_log error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
 # 💬 Telegram Alert Sender
 # ─────────────────────────────────────────────
 def send_telegram_message(message: str):
