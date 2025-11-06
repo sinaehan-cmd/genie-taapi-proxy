@@ -680,6 +680,62 @@ def learning_loop():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
+# 🔁 Genie Main Loop v2.0 – Prediction → GTI → Learning 자동 순환
+# ─────────────────────────────────────────────
+@app.route("/main_loop", methods=["POST"])
+def main_loop():
+    """전체 루프 자동 실행 (예측 → GTI → 자기학습)"""
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        BASE_URL = os.getenv("RENDER_BASE_URL", "https://genie-taapi-proxy-1.onrender.com")
+        headers = {"Content-Type": "application/json"}
+        body = {"access_key": os.getenv("GENIE_ACCESS_KEY")}
+
+        results = {}
+
+        # 1️⃣ Prediction Loop
+        pred = requests.post(f"{BASE_URL}/prediction_loop", json=body, headers=headers).json()
+        results["prediction_loop"] = pred
+        print(f"✅ Prediction loop completed: {pred}")
+
+        # 2️⃣ GTI Loop
+        time.sleep(5)
+        gti = requests.post(f"{BASE_URL}/gti_loop", json=body, headers=headers).json()
+        results["gti_loop"] = gti
+        print(f"✅ GTI loop completed: {gti}")
+
+        # 3️⃣ Learning Loop
+        time.sleep(5)
+        learn = requests.post(f"{BASE_URL}/learning_loop_internal", json=body, headers=headers).json()
+        results["learning_loop_internal"] = learn
+        print(f"✅ Learning loop completed: {learn}")
+
+        # 🧩 전체 결과
+        summary = {
+            "result": "main_loop_complete",
+            "steps": {
+                "prediction": pred.get("result"),
+                "GTI": gti.get("result"),
+                "learning": learn.get("result")
+            },
+            "GTI_Score": gti.get("GTI_Score"),
+            "avg_GTI": learn.get("avg_GTI"),
+            "learning_rate": learn.get("learning_rate"),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        print("🧠 Genie Main Loop Completed:", summary)
+        return jsonify(summary)
+
+    except Exception as e:
+        print("❌ main_loop error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
 # 🧭 System Log Loop
 # ─────────────────────────────────────────────
 @app.route("/system_log", methods=["POST"])
