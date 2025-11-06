@@ -1,102 +1,90 @@
+# -*- coding: utf-8 -*-
 # ======================================================
-# 🤖 Genie Feedback Integration Build v1.1 – Auto Loop + Uptime Logging
+# 🤖 Genie Autonomous Feedback Layer v3.1 – Safe Overlay Mode
 # ======================================================
-from flask import Flask
-from flask_cors import CORS
+
 import threading, time, requests, os
 from datetime import datetime, timedelta
-from app import app, get_sheets_service  # 기존 app.py 기반 모듈 그대로 사용
-
-CORS(app)
 
 # ─────────────────────────────────────────────
-# ⚙️ 환경 변수 설정
+# ⚙️ 환경 변수
 # ─────────────────────────────────────────────
 GENIE_ACCESS_KEY = os.getenv("GENIE_ACCESS_KEY")
 RENDER_BASE_URL = os.getenv("RENDER_BASE_URL", "https://genie-taapi-proxy-1.onrender.com")
-LOOP_INTERVAL = 3600  # ⏰ 1시간 간격
+LOOP_INTERVAL = int(os.getenv("GENIE_LOOP_INTERVAL", 3600))  # 기본 1시간
+
 LAST_SUCCESS = datetime.now()
 
 # ─────────────────────────────────────────────
-# 🧠 내부 호출 함수
+# 🔗 내부 호출 함수
 # ─────────────────────────────────────────────
 def call_genie(endpoint: str):
-    """지니 API 엔드포인트 호출 (Render 내부 self-call)"""
+    """기존 app.py의 endpoint를 안전하게 호출"""
     try:
         url = f"{RENDER_BASE_URL}/{endpoint}"
         res = requests.post(url, json={"access_key": GENIE_ACCESS_KEY}, timeout=30)
         if res.status_code == 200:
-            print(f"✅ {endpoint} 실행 완료 → {res.json()}")
+            print(f"✅ {endpoint} 성공: {res.json()}")
         else:
-            print(f"⚠️ {endpoint} 실행 실패 ({res.status_code}) → {res.text}")
+            print(f"⚠️ {endpoint} 실패: {res.status_code} / {res.text}")
     except Exception as e:
         print(f"❌ {endpoint} 호출 오류:", e)
 
 # ─────────────────────────────────────────────
-# 🔁 Auto Feedback Loop (1시간 간격)
+# 🔁 자율 루프
 # ─────────────────────────────────────────────
 def auto_feedback_loop():
-    """Prediction → GTI → Learning → SystemLog 순서로 주기적 실행"""
+    """기존 Flask 엔드포인트를 순차 호출"""
     global LAST_SUCCESS
     while True:
+        start_time = datetime.now()
+        print("\n🕒 [Auto Feedback] 루프 시작:", start_time.strftime("%Y-%m-%d %H:%M:%S"))
+
         try:
-            start_time = datetime.now()
-            print("\n🕒 [Auto Feedback Loop] 시작:", start_time.strftime("%Y-%m-%d %H:%M:%S"))
+            call_genie("auto_loop")        # 브리핑 생성
+            time.sleep(6)
+            call_genie("prediction_loop")  # 예측
+            time.sleep(6)
+            call_genie("gti_loop")         # 신뢰도 평가
+            time.sleep(6)
+            call_genie("learning_loop")    # 수식 보정
+            time.sleep(6)
 
-            # 1️⃣ 예측
-            call_genie("prediction_loop")
-            time.sleep(8)
-            # 2️⃣ GTI 계산
-            call_genie("gti_loop")
-            time.sleep(8)
-            # 3️⃣ 학습
-            call_genie("learning_loop")
-            time.sleep(4)
+            runtime = (datetime.now() - start_time).seconds
+            uptime = 100 if (datetime.now() - LAST_SUCCESS) < timedelta(hours=2) else 95
+            next_slot = (datetime.now() + timedelta(seconds=LOOP_INTERVAL)).strftime("%Y-%m-%d %H:%M:%S")
 
-            # 4️⃣ 시스템 로그 기록
-            end_time = datetime.now()
-            runtime = (end_time - start_time).seconds
-            uptime = 100 if (end_time - LAST_SUCCESS) < timedelta(hours=2) else 95
-            LAST_SUCCESS = end_time
-            next_slot = (end_time + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+            # SystemLog 기록
+            requests.post(
+                f"{RENDER_BASE_URL}/system_log",
+                json={
+                    "access_key": GENIE_ACCESS_KEY,
+                    "module": "AUTONOMOUS_LOOP",
+                    "status": "✅OK",
+                    "runtime": str(runtime),
+                    "trust_ok": "TRUE",
+                    "reason": "Safe Feedback Layer Completed",
+                    "ref_id": f"AUTO.{start_time.strftime('%Y%m%d%H%M%S')}",
+                    "uptime": str(uptime),
+                },
+                timeout=15,
+            )
 
-            try:
-                # System Log에 기록
-                requests.post(
-                    f"{RENDER_BASE_URL}/system_log",
-                    json={
-                        "access_key": GENIE_ACCESS_KEY,
-                        "module": "AUTO_FEEDBACK_LOOP",
-                        "status": "✅OK",
-                        "runtime": str(runtime),
-                        "trust_ok": "TRUE",
-                        "reason": "Auto Routine Completed",
-                        "ref_id": f"AUTO.{end_time.strftime('%Y%m%d%H%M%S')}",
-                        "uptime": str(uptime),
-                    },
-                    timeout=20,
-                )
-                print(f"✅ 루프 완료 | Runtime: {runtime}s | Uptime: {uptime}% | Next: {next_slot}")
-            except Exception as e:
-                print("⚠️ SystemLog 기록 오류:", e)
+            LAST_SUCCESS = datetime.now()
+            print(f"✅ 루프 완료 | Runtime: {runtime}s | Next: {next_slot}")
 
-            print("💤 1시간 대기 중 ...")
         except Exception as e:
-            print("❌ Auto Loop 오류:", e)
+            print("❌ 루프 내부 오류:", e)
+
+        print(f"💤 {LOOP_INTERVAL/60:.1f}분 대기 중 ...")
         time.sleep(LOOP_INTERVAL)
 
 # ─────────────────────────────────────────────
-# 🚀 서버 부팅 시 백그라운드 루프 시작
-# ─────────────────────────────────────────────
-def start_background_thread():
-    thread = threading.Thread(target=auto_feedback_loop, daemon=True)
-    thread.start()
-    print("✅ Genie Auto Feedback Loop Started (interval = 1h, with Uptime Logging)")
-
-# ─────────────────────────────────────────────
-# 🏁 Flask 앱 실행
+# 🚀 실행 (Flask와 독립)
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    start_background_thread()
-    app.run(host="0.0.0.0", port=8080)
-```
+    print("🚀 Genie Autonomous Feedback Layer 시작")
+    thread = threading.Thread(target=auto_feedback_loop, daemon=True)
+    thread.start()
+    while True:
+        time.sleep(3600)  # 메인 스레드 유지용
