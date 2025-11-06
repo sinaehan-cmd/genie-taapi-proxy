@@ -443,10 +443,11 @@ def prediction_loop():
 
 
 # ─────────────────────────────────────────────
-# 📈 GTI Loop – Prediction Accuracy Evaluator
+# 📈 GTI Loop – Prediction Accuracy Evaluator (Safe Version)
 # ─────────────────────────────────────────────
 @app.route("/gti_loop", methods=["POST"])
 def gti_loop():
+    """GTI 계산 루프 (값없음/NaN 자동 필터링 버전)"""
     try:
         data = request.get_json(force=True)
         if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
@@ -455,6 +456,7 @@ def gti_loop():
         service = get_sheets_service()
         sheet_id = os.getenv("SHEET_ID")
 
+        # 🧩 예측 데이터 가져오기
         pred = service.spreadsheets().values().get(
             spreadsheetId=sheet_id, range="genie_predictions!A:N"
         ).execute()
@@ -466,6 +468,7 @@ def gti_loop():
         last_preds = pv[-5:]
         deviations = []
 
+        # 📊 실제 시세 데이터
         data_result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id, range="genie_data_v5!A:Z"
         ).execute()
@@ -475,23 +478,33 @@ def gti_loop():
 
         dh = dv[0]
         ld = dv[-1]
-        actual_price = float(ld[dh.index("BTC/USD")])
+        actual_str = str(ld[dh.index("BTC/USD")]).strip()
+        if actual_str in ["", "값없음", "None", "nan", "NaN"]:
+            raise ValueError("Invalid actual BTC/USD value")
+        actual_price = float(actual_str)
 
+        # 📈 최근 예측들과 실제값 비교
         for p in last_preds:
             try:
-                pred_price = float(p[headers.index("Predicted_Price")])
+                val_str = str(p[headers.index("Predicted_Price")]).strip()
+                if val_str == "" or val_str.lower() in ["none", "nan", "값없음"]:
+                    continue
+                pred_price = float(val_str)
                 dev = abs(pred_price - actual_price) / actual_price * 100
                 deviations.append(dev)
-            except Exception:
+            except Exception as e:
+                print(f"⚠️ Skip invalid prediction: {val_str} ({e})")
                 continue
 
         if not deviations:
             return jsonify({"error": "No valid deviations"})
 
+        # 📘 평균 편차 및 GTI 계산
         avg_dev = round(sum(deviations) / len(deviations), 2)
         gti_score = max(0, min(100, 100 - avg_dev))
         trend = "Stable" if avg_dev < 2 else "Volatile"
 
+        # 🕒 로그 작성
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         gti_id = f"GTI.{now.replace(':','-').replace(' ','_')}"
         row_data = [[
@@ -514,6 +527,7 @@ def gti_loop():
     except Exception as e:
         print("❌ gti_loop error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 
 # ─────────────────────────────────────────────
