@@ -170,20 +170,29 @@ def view_sheet_html(sheet_name):
         return render_template_string(html)
     except Exception as e:
         return f"<h3>오류: {e}</h3>", 500
-
+        
 # ─────────────────────────────────────────────
-# 🌐 JSON 뷰어 (for Genie System)
+# 🌐 Smart JSON 뷰어 (for Genie System)
 # ─────────────────────────────────────────────
 @app.route("/view-json/<path:sheet_name>")
 def view_sheet_json(sheet_name):
     """
     ✅ Google Sheets 데이터를 JSON으로 출력 (지니 읽기용)
-    예: /view-json/genie_data_v5
+    기본: 최근 200행
+    옵션:
+      ?limit=50   → 최근 50행
+      ?since=2025-11-06 → 해당 날짜 이후만
+      ?columns=Timestamp,BTC/USD,RSI(1h) → 필요한 열만
     """
     try:
         decoded = unquote(sheet_name)
         service = get_sheets_service()
         sheet_id = os.getenv("SHEET_ID")
+
+        # 파라미터 처리
+        limit = int(request.args.get("limit", 200))  # 🔸 기본 200행
+        since = request.args.get("since")
+        columns = request.args.get("columns")
 
         # 시트 데이터 가져오기
         result = service.spreadsheets().values().get(
@@ -193,15 +202,22 @@ def view_sheet_json(sheet_name):
         if not values or len(values) < 2:
             return jsonify({"error": "No data found", "sheet": decoded}), 404
 
-        # 첫 행을 헤더로, 나머지를 딕셔너리로 매핑
         headers = values[0]
         rows = []
         for row in values[1:]:
             entry = {}
             for i, header in enumerate(headers):
-                value = row[i] if i < len(row) else ""
-                entry[header] = value
+                if columns and header not in columns.split(","):
+                    continue
+                entry[header] = row[i] if i < len(row) else ""
             rows.append(entry)
+
+        # 날짜 필터
+        if since and "Timestamp" in headers:
+            rows = [r for r in rows if r.get("Timestamp", "") >= since]
+
+        # 최신 limit행만 반환
+        rows = rows[-limit:]
 
         response = {
             "sheet": decoded,
@@ -210,7 +226,7 @@ def view_sheet_json(sheet_name):
             "data": rows
         }
 
-        print(f"✅ JSON view generated for sheet: {decoded} ({len(rows)} rows)")
+        print(f"✅ JSON view generated for {decoded} ({len(rows)} rows)")
         return jsonify(response), 200
 
     except Exception as e:
