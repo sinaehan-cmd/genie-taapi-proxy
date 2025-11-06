@@ -443,11 +443,11 @@ def prediction_loop():
 
 
 # ─────────────────────────────────────────────
-# 📈 GTI Loop – Prediction Accuracy Evaluator (Safe Version)
+# 📈 GTI Loop – Prediction Accuracy Evaluator (Safe v2.1)
 # ─────────────────────────────────────────────
 @app.route("/gti_loop", methods=["POST"])
 def gti_loop():
-    """GTI 계산 루프 (값없음/NaN 자동 필터링 버전)"""
+    """GTI 계산 루프 (값없음/NaN 자동 필터링 + 경고로그 버전)"""
     try:
         data = request.get_json(force=True)
         if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
@@ -479,25 +479,32 @@ def gti_loop():
         dh = dv[0]
         ld = dv[-1]
         actual_str = str(ld[dh.index("BTC/USD")]).strip()
-        if actual_str in ["", "값없음", "None", "nan", "NaN"]:
-            raise ValueError("Invalid actual BTC/USD value")
+
+        # ⚠️ 실제값 검증
+        if actual_str in ["", "값없음", "None", "nan", "NaN", "-", "N/A"]:
+            print("⚠️ [GTI] 실제 BTC/USD 값이 비어 있음 → 계산 생략")
+            return jsonify({"warning": "No valid actual price (값없음) – skipped GTI"})
+
         actual_price = float(actual_str)
 
         # 📈 최근 예측들과 실제값 비교
         for p in last_preds:
             try:
                 val_str = str(p[headers.index("Predicted_Price")]).strip()
-                if val_str == "" or val_str.lower() in ["none", "nan", "값없음"]:
+                if val_str in ["", "값없음", "None", "nan", "NaN", "-", "N/A"]:
                     continue
                 pred_price = float(val_str)
+                if pred_price <= 0:
+                    continue
                 dev = abs(pred_price - actual_price) / actual_price * 100
                 deviations.append(dev)
             except Exception as e:
-                print(f"⚠️ Skip invalid prediction: {val_str} ({e})")
+                print(f"⚠️ Skip invalid prediction: {p} ({e})")
                 continue
 
         if not deviations:
-            return jsonify({"error": "No valid deviations"})
+            print("⚠️ [GTI] 유효한 편차 데이터가 없음 – 루프 종료")
+            return jsonify({"warning": "No valid deviations – skipped GTI"})
 
         # 📘 평균 편차 및 GTI 계산
         avg_dev = round(sum(deviations) / len(deviations), 2)
@@ -524,9 +531,11 @@ def gti_loop():
 
         print(f"✅ GTI Logged: {gti_id} (Score={gti_score}, AvgDev={avg_dev}%)")
         return jsonify({"result": "logged", "GTI_Score": gti_score})
+
     except Exception as e:
         print("❌ gti_loop error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 
 
