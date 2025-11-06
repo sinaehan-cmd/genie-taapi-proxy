@@ -1,11 +1,15 @@
 # ======================================================
 # 🧠 Genie System v2 – Full Integrated Version
 # ======================================================
-from flask import Flask, jsonify, request
-import requests, os, json, time
-from datetime import datetime
+from flask import Flask, jsonify, request, render_template_string
+from flask_cors import CORS
+import requests, os, json, base64, time
+from datetime import datetime, timedelta
+from urllib.parse import unquote
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from openai import OpenAI
+
 
 app = Flask(__name__)
 
