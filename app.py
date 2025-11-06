@@ -171,6 +171,53 @@ def view_sheet_html(sheet_name):
     except Exception as e:
         return f"<h3>오류: {e}</h3>", 500
 
+# ─────────────────────────────────────────────
+# 🌐 JSON 뷰어 (for Genie System)
+# ─────────────────────────────────────────────
+@app.route("/view-json/<path:sheet_name>")
+def view_sheet_json(sheet_name):
+    """
+    ✅ Google Sheets 데이터를 JSON으로 출력 (지니 읽기용)
+    예: /view-json/genie_data_v5
+    """
+    try:
+        decoded = unquote(sheet_name)
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+
+        # 시트 데이터 가져오기
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range=decoded
+        ).execute()
+        values = result.get("values", [])
+        if not values or len(values) < 2:
+            return jsonify({"error": "No data found", "sheet": decoded}), 404
+
+        # 첫 행을 헤더로, 나머지를 딕셔너리로 매핑
+        headers = values[0]
+        rows = []
+        for row in values[1:]:
+            entry = {}
+            for i, header in enumerate(headers):
+                value = row[i] if i < len(row) else ""
+                entry[header] = value
+            rows.append(entry)
+
+        response = {
+            "sheet": decoded,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "count": len(rows),
+            "data": rows
+        }
+
+        print(f"✅ JSON view generated for sheet: {decoded} ({len(rows)} rows)")
+        return jsonify(response), 200
+
+    except Exception as e:
+        print("❌ view-json error:", e)
+        return jsonify({"error": str(e), "sheet": sheet_name}), 500
+
+
 
 # ─────────────────────────────────────────────
 # ✍️ 시트 쓰기
