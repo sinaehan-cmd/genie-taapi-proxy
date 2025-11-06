@@ -28,6 +28,7 @@ print("GOOGLE_SERVICE_ACCOUNT:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
 print("SHEET_ID:", os.getenv("SHEET_ID"))
 print("GENIE_ACCESS_KEY:", bool(os.getenv("GENIE_ACCESS_KEY")))
 print("OPENAI_API_KEY:", bool(os.getenv("OPENAI_API_KEY")))
+print("TAAPI_KEY:", bool(os.getenv("TAAPI_KEY")))
 print("==================================================")
 
 # ─────────────────────────────────────────────
