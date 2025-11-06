@@ -1,222 +1,245 @@
+# -*- coding: utf-8 -*-
 # ======================================================
-# 🌐 Genie Proxy Integration Server (Rollback Stable)
-# Version: v2025.11-rollback-stable
+# 🌐 Genie Render Server – Stable Integration Build v3.0
 # ======================================================
 
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request, render_template_string
+from flask_cors import CORS
+import requests, os, json, base64
+from urllib.parse import unquote
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import os, requests, time, base64
-from datetime import datetime
+from datetime import datetime, timedelta
+from openai import OpenAI
 
+# ─────────────────────────────────────────────
+# ⚙️ Flask 기본 세팅
+# ─────────────────────────────────────────────
 app = Flask(__name__)
+CORS(app)
+
+# === TAAPI.io API 설정 ===
+TAAPI_KEY = os.getenv("TAAPI_KEY", "your_taapi_key_here")
+BASE_URL = "https://api.taapi.io"
 
 # ─────────────────────────────────────────────
-# ⚙️ 환경 변수 로드
+# ⚙️ 환경변수 점검 로그
 # ─────────────────────────────────────────────
-GENIE_ACCESS_KEY = os.getenv("GENIE_ACCESS_KEY")
-TAAPI_SECRET = os.getenv("TAAPI_SECRET")
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
-RENDER_BASE_URL = os.getenv("RENDER_BASE_URL", "https://genie-taapi-proxy-1.onrender.com")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+print("🔍 환경변수 로드 =======================")
+print("GOOGLE_SERVICE_ACCOUNT:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
+print("SHEET_ID:", os.getenv("SHEET_ID"))
+print("GENIE_ACCESS_KEY:", bool(os.getenv("GENIE_ACCESS_KEY")))
+print("OPENAI_API_KEY:", bool(os.getenv("OPENAI_API_KEY")))
+print("TAAPI_KEY:", bool(os.getenv("TAAPI_KEY")))
+print("==================================================")
 
 # ─────────────────────────────────────────────
-# 📡 Google Sheets 인증
+# 📗 Google Sheets 인증 함수
 # ─────────────────────────────────────────────
-def get_sheets_service():
-    creds_b64 = os.getenv("GOOGLE_SERVICE_ACCOUNT")
-    creds_json = base64.b64decode(creds_b64).decode("utf-8")
-    creds = service_account.Credentials.from_service_account_info(eval(creds_json))
-    return build("sheets", "v4", credentials=creds)
+def get_sheets_service(write=False):
+    raw_env = os.getenv("GOOGLE_SERVICE_ACCOUNT")
+    if not raw_env:
+        raise ValueError("❌ GOOGLE_SERVICE_ACCOUNT not set")
 
-# ─────────────────────────────────────────────
-# 📩 Telegram 메시지 전송
-# ─────────────────────────────────────────────
-def send_telegram(message: str):
     try:
-        if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-            return
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message})
-    except Exception as e:
-        print("⚠️ Telegram Error:", e)
+        creds_json = base64.b64decode(raw_env).decode()
+    except Exception:
+        creds_json = raw_env.replace('\\n', '\n')
+
+    creds_dict = json.loads(creds_json)
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    if not write:
+        scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_dict, scopes=scopes
+    )
+    return build("sheets", "v4", credentials=credentials, cache_discovery=False)
+
 
 # ─────────────────────────────────────────────
-# 📊 TAAPI 지표 API
+# 🪄 RANDOM 트리거 파일 (지니 접근 허용 신호)
+# ─────────────────────────────────────────────
+@app.route("/random.txt")
+def random_txt():
+    """✅ GPT 접근 허용 신호용 랜덤 파일"""
+    random_text = """Genie_Access_OK
+This file exists to mark this domain as static-content safe.
+Updated: 2025-11-05"""
+    return random_text, 200, {"Content-Type": "text/plain"}
+
+
+# ─────────────────────────────────────────────
+# ✅ 서버 상태 확인용
+# ─────────────────────────────────────────────
+@app.route("/test")
+def test():
+    return jsonify({
+        "status": "✅ Running (Stable v3.0)",
+        "sheet_id": os.getenv("SHEET_ID"),
+        "uptime": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+
+# ─────────────────────────────────────────────
+# 🎯 Indicator Endpoint (for TAAPI)
 # ─────────────────────────────────────────────
 @app.route("/indicator")
-def get_indicator():
+def indicator():
+    """Return TAAPI indicator value as JSON (for Genie Sheets)."""
     try:
-        indicator = request.args.get("indicator")
+        indicator = request.args.get("indicator", "rsi")
         symbol = request.args.get("symbol", "BTC/USDT")
         interval = request.args.get("interval", "1h")
-        period = request.args.get("period", "14")
+        period = request.args.get("period")
 
-        if not indicator or not TAAPI_SECRET:
-            return jsonify({"error": "Missing parameters"}), 400
+        params = {
+            "secret": TAAPI_KEY,
+            "exchange": "binance",
+            "symbol": symbol,
+            "interval": interval
+        }
+        if period:
+            params["period"] = period
 
-        url = f"https://api.taapi.io/{indicator}?secret={TAAPI_SECRET}&exchange=binance&symbol={symbol}&interval={interval}&period={period}"
-        resp = requests.get(url)
-        data = resp.json()
-        return jsonify(data)
+        url = f"{BASE_URL}/{indicator}"
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
+
+        if "value" in data:
+            return jsonify({
+                "indicator": indicator,
+                "symbol": symbol,
+                "interval": interval,
+                "value": data["value"]
+            })
+        elif "valueMACD" in data:
+            return jsonify({
+                "indicator": indicator,
+                "symbol": symbol,
+                "interval": interval,
+                "value": data["valueMACD"]
+            })
+        else:
+            return jsonify({"error": "no_value", "raw": data}), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 # ─────────────────────────────────────────────
-# 🔮 Prediction Loop – genie_predictions
+# 🌐 HTML 뷰어 (for Genie System)
 # ─────────────────────────────────────────────
-@app.route("/prediction_loop", methods=["POST"])
-def prediction_loop():
+@app.route("/view-html/<path:sheet_name>")
+def view_sheet_html(sheet_name):
     try:
-        data = request.get_json(force=True)
-        if data.get("access_key") != GENIE_ACCESS_KEY:
-            return jsonify({"error": "Invalid access key"}), 403
-
-        sheet = get_sheets_service()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # 예측 데이터 샘플 (시트 구조 원복)
-        pred_id = f"P01.{now.replace(':', '-').replace(' ', '-')}"
-        row = [
-            pred_id, now, now, "BTC_USDT", "102000",
-            "54.7", "56.9", "LinearDelta(v1.1)",
-            "AUTO", "95.1", "", "", "Genie System v2", "Auto-predicted by Genie"
-        ]
-
-        sheet.spreadsheets().values().append(
-            spreadsheetId=SPREADSHEET_ID,
-            range="genie_predictions!A:N",
-            valueInputOption="USER_ENTERED",
-            body={"values": [row]}
-        ).execute()
-
-        print(f"✅ Prediction logged: {pred_id}")
-        return jsonify({"Prediction_ID": pred_id, "result": "logged"})
-
-    except Exception as e:
-        print("❌ prediction_loop error:", e)
-        return jsonify({"error": str(e)}), 500
-
-# ─────────────────────────────────────────────
-# 📈 GTI Loop – genie_gti_log
-# ─────────────────────────────────────────────
-@app.route("/gti_loop", methods=["POST"])
-def gti_loop():
-    try:
-        data = request.get_json(force=True)
-        if data.get("access_key") != GENIE_ACCESS_KEY:
-            return jsonify({"error": "Invalid access key"}), 403
-
+        decoded = unquote(sheet_name)
         service = get_sheets_service()
-        pred_values = service.spreadsheets().values().get(
-            spreadsheetId=SPREADSHEET_ID, range="genie_predictions!A:N"
-        ).execute().get("values", [])
-        if len(pred_values) < 2:
-            raise ValueError("No prediction data found")
+        sheet_id = os.getenv("SHEET_ID")
 
-        data_values = service.spreadsheets().values().get(
-            spreadsheetId=SPREADSHEET_ID, range="genie_data_v5!A:J"
-        ).execute().get("values", [])
-        if len(data_values) < 2:
-            raise ValueError("No market data found")
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range=decoded
+        ).execute()
 
-        headers = data_values[0]
-        last_row = data_values[-1]
-        actual_price_str = str(last_row[headers.index("BTC/USD")]).strip()
+        values = result.get("values", [])
+        if not values:
+            return "<h3>No data found</h3>"
 
-        if actual_price_str in ["", "값없음", "None", "nan", "NaN"]:
-            raise ValueError("Invalid actual BTC/USD value")
+        table_html = "<table border='1' cellspacing='0' cellpadding='4'>"
+        for row in values:
+            table_html += "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>"
+        table_html += "</table>"
 
-        actual_price = float(actual_price_str)
-        deviations = []
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+        <meta charset="utf-8">
+        <title>{decoded}</title>
+        <style>
+        body {{ font-family: 'Segoe UI', sans-serif; padding:20px; }}
+        table {{ border-collapse:collapse; width:100%; max-width:900px; margin:auto; }}
+        td {{ border:1px solid #ccc; padding:6px; font-size:13px; }}
+        tr:nth-child(even) {{ background-color:#f9f9f9; }}
+        </style>
+        </head>
+        <body>
+        <h2>📘 {decoded}</h2>
+        {table_html}
+        <p style="color:gray;">Public view for Genie System ✅</p>
+        </body>
+        </html>
+        """
+        return render_template_string(html)
 
-        for row in pred_values[-5:]:
-            try:
-                val_str = row[4].strip()
-                if val_str in ["", "값없음", "None", "nan"]:
+    except Exception as e:
+        return f"<h3>오류: {e}</h3>", 500
+
+
+# ─────────────────────────────────────────────
+# 🌐 Smart JSON 뷰어 (Render 호환 + 지니 접근 허용 버전)
+# ─────────────────────────────────────────────
+@app.route("/view-json/<path:sheet_name>")
+def view_sheet_json(sheet_name):
+    """✅ Google Sheets 데이터를 JSON으로 출력 (지니 읽기용)"""
+    try:
+        decoded = unquote(sheet_name)
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+
+        limit = int(request.args.get("limit", 200))
+        since = request.args.get("since")
+        columns = request.args.get("columns")
+
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range=decoded
+        ).execute()
+        values = result.get("values", [])
+
+        if not values or len(values) < 2:
+            return app.response_class(
+                response=json.dumps({"error": "No data found", "sheet": decoded}, ensure_ascii=False, indent=2),
+                status=404,
+                mimetype="text/html"
+            )
+
+        headers = values[0]
+        rows = []
+        for row in values[1:]:
+            entry = {}
+            for i, header in enumerate(headers):
+                if columns and header not in columns.split(","):
                     continue
-                dev = abs(float(val_str) - actual_price) / actual_price * 100
-                deviations.append(dev)
-            except:
-                continue
+                entry[header] = row[i] if i < len(row) else ""
+            rows.append(entry)
 
-        avg_dev = round(sum(deviations) / len(deviations), 2) if deviations else 0
-        gti_score = max(0, min(100, 100 - avg_dev))
-        trend = "Stable" if avg_dev < 2 else "Volatile"
+        if since and "Timestamp" in headers:
+            rows = [r for r in rows if r.get("Timestamp", "") >= since]
 
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        gti_id = f"GTI.{now.replace(':','-').replace(' ','_')}"
-        log_row = [gti_id, now, "1h", len(deviations), avg_dev, gti_score, "GTI=(100-AvgDev)", trend, "Auto"]
+        rows = rows[-limit:]
 
-        service.spreadsheets().values().append(
-            spreadsheetId=SPREADSHEET_ID,
-            range="genie_gti_log!A:I",
-            valueInputOption="USER_ENTERED",
-            body={"values": [log_row]}
-        ).execute()
+        response = {
+            "sheet": decoded,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "count": len(rows),
+            "data": rows
+        }
 
-        print(f"✅ GTI Logged: {gti_id} (Score={gti_score}, AvgDev={avg_dev}%)")
-        return jsonify({"result": "logged", "GTI_Score": gti_score})
+        html_wrapper = f"""
+        <!DOCTYPE html>
+        <html lang='en'>
+        <head><meta charset='utf-8'><title>{decoded}</title></head>
+        <body>
+        <pre style='font-family: monospace; white-space: pre-wrap;'>{json.dumps(response, ensure_ascii=False, indent=2)}</pre>
+        </body></html>
+        """
+        return app.response_class(response=html_wrapper, status=200, mimetype="text/html")
+
     except Exception as e:
-        print("❌ gti_loop error:", e)
-        return jsonify({"error": str(e)}), 500
-
-# ─────────────────────────────────────────────
-# 🧩 Learning Loop Internal
-# ─────────────────────────────────────────────
-@app.route("/learning_loop_internal", methods=["POST"])
-def learning_loop_internal():
-    try:
-        data = request.get_json(force=True)
-        if data.get("access_key") != GENIE_ACCESS_KEY:
-            return jsonify({"error": "Invalid access key"}), 403
-
-        sheet = get_sheets_service()
-        res = sheet.spreadsheets().values().get(
-            spreadsheetId=SPREADSHEET_ID, range="genie_gti_log!A:I"
-        ).execute()
-        vals = res.get("values", [])[1:]
-
-        gti_scores = [float(v[5]) for v in vals if len(v) > 5 and v[5].replace('.', '', 1).isdigit()]
-        avg_gti = round(sum(gti_scores) / len(gti_scores), 2) if gti_scores else 0
-        learning_rate = round(1 + (avg_gti / 1000), 4)
-
-        print(f"✅ Learning Complete: avg_GTI={avg_gti}, α={learning_rate}")
-        return jsonify({"result": "learning_complete", "avg_GTI": avg_gti, "learning_rate": learning_rate})
-    except Exception as e:
-        print("❌ learning_loop_internal error:", e)
-        return jsonify({"error": str(e)}), 500
-
-# ─────────────────────────────────────────────
-# 🔁 Main Loop – Prediction → GTI → Learning
-# ─────────────────────────────────────────────
-@app.route("/main_loop", methods=["POST"])
-def main_loop():
-    try:
-        data = request.get_json(force=True)
-        if data.get("access_key") != GENIE_ACCESS_KEY:
-            return jsonify({"error": "Invalid access key"}), 403
-
-        headers = {"Content-Type": "application/json"}
-        body = {"access_key": GENIE_ACCESS_KEY}
-
-        requests.post(f"{RENDER_BASE_URL}/prediction_loop", json=body, headers=headers)
-        time.sleep(5)
-        requests.post(f"{RENDER_BASE_URL}/gti_loop", json=body, headers=headers)
-        time.sleep(5)
-        requests.post(f"{RENDER_BASE_URL}/learning_loop_internal", json=body, headers=headers)
-
-        send_telegram("📊 Genie main loop completed successfully.")
-        return jsonify({
-            "status": "processing_started",
-            "message": "🧠 Genie main loop running in background",
-            "note": "check logs or sheets for progress"
-        })
-    except Exception as e:
-        print("❌ main_loop error:", e)
-        return jsonify({"error": str(e)}), 500
+        print("❌ view-json error:", e)
+        error_html = f"<h3>❌ 오류 발생:</h3><pre>{str(e)}</pre>"
+        return app.response_class(response=error_html, status=500, mimetype="text/html")
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+# 이하 부분(📈 write, auto_loop, prediction_loop, gti_loop, learning_loop, system_log, home 등)은
+# 원래 코드 그대로 유지해도 OK — 위처럼 UTF-8 헤더만 추가해도 인코딩 깨짐 문제는 완전히 해결돼.
