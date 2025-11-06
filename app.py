@@ -627,6 +627,46 @@ def system_log():
 
 
 # ─────────────────────────────────────────────
+# 💬 Telegram Alert Sender
+# ─────────────────────────────────────────────
+def send_telegram_message(message: str):
+    """텔레그램 메시지 전송 함수"""
+    try:
+        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        if not token or not chat_id:
+            print("⚠️ Telegram env not set")
+            return {"error": "missing_token_or_chatid"}
+
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": message, "parse_mode": "HTML"}
+        res = requests.post(url, data=payload, timeout=10)
+        print("📤 Telegram Response:", res.status_code, res.text)
+        return res.json()
+    except Exception as e:
+        print("❌ Telegram send error:", e)
+        return {"error": str(e)}
+
+# ─────────────────────────────────────────────
+# 📡 /send – 외부에서 텔레그램 전송용 엔드포인트
+# ─────────────────────────────────────────────
+@app.route("/send", methods=["POST"])
+def send_message():
+    """외부 POST로 텔레그램 알림 전송"""
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        msg = data.get("message", "⚡ Test message from Genie System")
+        result = send_telegram_message(msg)
+        return jsonify({"status": "sent", "telegram_response": result})
+    except Exception as e:
+        print("❌ /send error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────
 # 🌐 루트 경로
 # ─────────────────────────────────────────────
 @app.route("/")
