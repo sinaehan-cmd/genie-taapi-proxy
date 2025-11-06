@@ -537,6 +537,81 @@ def gti_loop():
         return jsonify({"error": str(e)}), 500
 
 
+# ─────────────────────────────────────────────
+# 🤖 Genie Self-Improvement Loop (learning_loop_internal v1.0)
+# 목적: 최근 GTI 결과를 기반으로 계산식 가중치 보정
+# ─────────────────────────────────────────────
+@app.route("/learning_loop_internal", methods=["POST"])
+def learning_loop_internal():
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+
+        # 1️⃣ 최신 GTI 로그 5개 가져오기
+        gti_vals = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range="genie_gti_log!A:J"
+        ).execute().get("values", [])
+        if len(gti_vals) < 2:
+            return jsonify({"error": "No GTI data"})
+        recent = gti_vals[-6:-1]  # 최근 5개
+        headers = gti_vals[0]
+
+        # 2️⃣ 평균 GTI 점수 계산
+        gti_idx = headers.index("GTI_Score")
+        gti_scores = [float(r[gti_idx]) for r in recent if r[gti_idx].replace('.', '', 1).isdigit()]
+        avg_gti = sum(gti_scores) / len(gti_scores)
+
+        # 3️⃣ 기준치와 비교하여 학습률 결정
+        learning_rate = 0.05 if avg_gti > 80 else 0.15 if avg_gti > 50 else 0.25
+        correction_factor = (100 - avg_gti) / 100
+
+        # 4️⃣ 계산식 저장소(genie_formula_store) 업데이트
+        fvals = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range="genie_formula_store!A:G"
+        ).execute().get("values", [])
+        if len(fvals) < 2:
+            return jsonify({"error": "No formula data"})
+
+        headers_f = fvals[0]
+        formula_idx = headers_f.index("Formula")
+        version_idx = headers_f.index("Version")
+
+        # 5️⃣ 새 버전 작성
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        updated = []
+        for row in fvals[1:]:
+            formula = row[formula_idx]
+            version = row[version_idx]
+            new_version = f"{version}_auto_{now.replace(' ', '_').replace(':', '-')}"
+            comment = f"Auto-adjusted by Genie (GTI={avg_gti:.2f}, rate={learning_rate})"
+            updated.append([now, row[1], formula, f"{formula}*{1 - correction_factor*learning_rate:.4f}",
+                            "Auto-Adjusted", new_version, row[5], comment])
+
+        # 6️⃣ 시트에 추가 기록
+        write_service = get_sheets_service(write=True)
+        write_service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="genie_formula_store!A:H",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": updated}
+        ).execute()
+
+        print(f"✅ Learning loop updated {len(updated)} formulas (Avg GTI={avg_gti:.2f})")
+        return jsonify({
+            "result": "learning_complete",
+            "avg_GTI": round(avg_gti, 2),
+            "learning_rate": learning_rate,
+            "updated_formulas": len(updated)
+        })
+
+    except Exception as e:
+        print("❌ learning_loop_internal error:", e)
+        return jsonify({"error": str(e)}), 500
 
 
 # ─────────────────────────────────────────────
