@@ -541,7 +541,7 @@ def final_briefing():
         if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
             return jsonify({"error": "Invalid access key"}), 403
 
-        service = get_sheets_service()
+        service = get_sheets_service(write=True)
         sheet_id = os.getenv("SHEET_ID")
 
         # ─────────────────────────────────────────────
