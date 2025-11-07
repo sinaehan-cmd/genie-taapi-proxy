@@ -122,12 +122,12 @@ def view_sheet_html(sheet_name):
     except Exception as e:
         return f"<h3>오류: {e}</h3>", 500
 
-# ─────────────────────────────────────────────
-# 🌐 Smart JSON 뷰어 (Render 호환 + 지니 접근 허용 버전)
-# ─────────────────────────────────────────────
+# ======================================================
+# 🌐 Smart JSON 뷰어 (지니 접근 완전 호환 버전)
+# ======================================================
 @app.route("/view-json/<path:sheet_name>")
 def view_sheet_json(sheet_name):
-    """✅ Google Sheets 데이터를 JSON으로 출력 (지니 읽기용)"""
+    """✅ Google Sheets 데이터를 JSON으로 출력 (지니 직접 읽기용)"""
     try:
         decoded = unquote(sheet_name)
         service = get_sheets_service()
@@ -135,20 +135,14 @@ def view_sheet_json(sheet_name):
         limit = int(request.args.get("limit", 200))
         since = request.args.get("since")
         columns = request.args.get("columns")
+
         result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id, range=decoded
         ).execute()
         values = result.get("values", [])
         if not values or len(values) < 2:
-            return app.response_class(
-                response=json.dumps(
-                    {"error": "No data found", "sheet": decoded},
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-                status=404,
-                mimetype="text/html",
-            )
+            return jsonify({"error": "No data found", "sheet": decoded}), 404
+
         headers = values[0]
         rows = []
         for row in values[1:]:
@@ -158,8 +152,10 @@ def view_sheet_json(sheet_name):
                     continue
                 entry[header] = row[i] if i < len(row) else ""
             rows.append(entry)
+
         if since and "Timestamp" in headers:
             rows = [r for r in rows if r.get("Timestamp", "") >= since]
+
         rows = rows[-limit:]
         response = {
             "sheet": decoded,
@@ -167,15 +163,13 @@ def view_sheet_json(sheet_name):
             "count": len(rows),
             "data": rows,
         }
-        html_wrapper = f"""<!DOCTYPE html><html lang='en'>
-<head><meta charset='utf-8'><title>{decoded}</title></head>
-<body><pre style='font-family:monospace;white-space:pre-wrap;'>
-{json.dumps(response, ensure_ascii=False, indent=2)}
-</pre></body></html>"""
-        return app.response_class(response=html_wrapper, status=200, mimetype="text/html")
+
+        # ✅ HTML로 감싸지 않고 순수 JSON으로 반환
+        return jsonify(response)
+
     except Exception as e:
-        error_html = f"<h3>❌ view-json error:</h3><pre>{str(e)}</pre>"
-        return app.response_class(response=error_html, status=500, mimetype="text/html")
+        return jsonify({"error": str(e)}), 500
+
 
 # ─────────────────────────────────────────────
 # ✍️ 시트 쓰기
