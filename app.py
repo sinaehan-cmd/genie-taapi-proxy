@@ -123,71 +123,59 @@ def view_sheet_html(sheet_name):
         return f"<h3>오류: {e}</h3>", 500
 
 # ─────────────────────────────────────────────
-# 🌐 Smart JSON 뷰어 (지니 접근 100% 호환 버전)
+# 🌐 Smart JSON 뷰어 (긴급 디버그 전용 버전)
 # ─────────────────────────────────────────────
 @app.route("/view-json/<path:sheet_name>")
 def view_sheet_json(sheet_name):
-    """✅ Google Sheets 데이터를 JSON으로 출력 (지니 읽기용: HTML + JSON script 구조)"""
+    """✅ Google Sheets 데이터를 JSON으로 출력 (긴급 디버그 모드)"""
+    from googleapiclient.errors import HttpError
+    import traceback
+
     try:
         decoded = unquote(sheet_name)
+        print(f"[DEBUG] 🔍 view-json 요청 수신: {decoded}")
         service = get_sheets_service()
         sheet_id = os.getenv("SHEET_ID")
+        print(f"[DEBUG] SHEET_ID={sheet_id}")
 
-        # optional query params
-        limit = int(request.args.get("limit", 200))
-        since = request.args.get("since")
-        columns = request.args.get("columns")
-
-        # fetch data
         result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id, range=decoded
         ).execute()
+        print("[DEBUG] Google Sheets API 호출 성공")
+
         values = result.get("values", [])
-        if not values or len(values) < 2:
-            return app.response_class(
-                response=f"<h3>❌ No data found in sheet: {decoded}</h3>",
-                status=404,
-                mimetype="text/html",
-            )
+        if not values:
+            raise ValueError(f"No data found in sheet: {decoded}")
 
-        # parse headers + rows
         headers = values[0]
-        rows = []
-        for row in values[1:]:
-            entry = {}
-            for i, header in enumerate(headers):
-                if columns and header not in columns.split(","):
-                    continue
-                entry[header] = row[i] if i < len(row) else ""
-            rows.append(entry)
-
-        # filter by Timestamp if needed
-        if since and "Timestamp" in headers:
-            rows = [r for r in rows if r.get("Timestamp", "") >= since]
-
-        rows = rows[-limit:]
+        rows = [dict(zip(headers, row)) for row in values[1:]]
         response = {
             "sheet": decoded,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "count": len(rows),
-            "data": rows,
+            "data": rows[-5:],  # 최근 5개만
         }
 
-        # HTML wrapper with embedded JSON (지니가 확실히 읽음)
-        html_wrapper = f"""<!DOCTYPE html>
-<html lang='en'>
-<head><meta charset='utf-8'><title>{decoded}</title></head>
-<body>
-<script type='application/json'>
-{json.dumps(response, ensure_ascii=False, indent=2)}
-</script>
-</body>
-</html>"""
-        return app.response_class(response=html_wrapper, status=200, mimetype="text/html")
+        html = f"<h2>✅ 정상 동작</h2><pre>{json.dumps(response, ensure_ascii=False, indent=2)}</pre>"
+        return app.response_class(response=html, status=200, mimetype="text/html")
+
+    except HttpError as e:
+        print("❌ Google API HttpError:", e)
+        tb = traceback.format_exc()
+        return app.response_class(
+            response=f"<h2>❌ Google API Error</h2><pre>{str(e)}</pre><pre>{tb}</pre>",
+            status=500,
+            mimetype="text/html",
+        )
 
     except Exception as e:
-        error_html = f"<h3>❌ view-json error:</h3><pre>{str(e)}</pre>"
-        return app.response_class(response=error_html, status=500, mimetype="text/html")
+        tb = traceback.format_exc()
+        print("❌ view-json general error:", e)
+        return app.response_class(
+            response=f"<h2>❌ 일반 오류 발생</h2><pre>{str(e)}</pre><pre>{tb}</pre>",
+            status=500,
+            mimetype="text/html",
+        )
 
 
 
