@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ======================================================
-# 🤖 Genie Autonomous Feedback Layer v3.1 – Safe Overlay Mode
+# 🤖 Genie Autonomous Feedback Layer v3.2 – Reader + Auto-Recovery 통합판
 # ======================================================
 
 import threading, time, requests, os
@@ -15,8 +15,9 @@ LOOP_INTERVAL = int(os.getenv("GENIE_LOOP_INTERVAL", 3600))  # 기본 1시간
 
 LAST_SUCCESS = datetime.now()
 
+
 # ─────────────────────────────────────────────
-# 🔗 내부 호출 함수
+# 🔗 엔드포인트 호출 함수
 # ─────────────────────────────────────────────
 def call_genie(endpoint: str):
     """기존 app.py의 endpoint를 안전하게 호출"""
@@ -30,17 +31,21 @@ def call_genie(endpoint: str):
     except Exception as e:
         print(f"❌ {endpoint} 호출 오류:", e)
 
+
 # ─────────────────────────────────────────────
-# 🔁 자율 루프
+# 🔁 자율 피드백 루프
 # ─────────────────────────────────────────────
 def auto_feedback_loop():
-    """기존 Flask 엔드포인트를 순차 호출"""
+    """기존 Flask 엔드포인트들을 순차 호출하며 시스템 상태를 유지"""
     global LAST_SUCCESS
     while True:
+        # 콘솔 클리어
+        os.system("clear" if os.name == "posix" else "cls")
         start_time = datetime.now()
         print("\n🕒 [Auto Feedback] 루프 시작:", start_time.strftime("%Y-%m-%d %H:%M:%S"))
 
         try:
+            # ① 루프별 호출 순서
             call_genie("auto_loop")        # 브리핑 생성
             time.sleep(6)
             call_genie("prediction_loop")  # 예측
@@ -49,12 +54,14 @@ def auto_feedback_loop():
             time.sleep(6)
             call_genie("learning_loop")    # 수식 보정
             time.sleep(6)
+            call_genie("reader_loop")      # ✅ 최종 브리핑 읽기 (상태 반영)
+            time.sleep(3)
 
+            # ② 시스템 로그 기록
             runtime = (datetime.now() - start_time).seconds
             uptime = 100 if (datetime.now() - LAST_SUCCESS) < timedelta(hours=2) else 95
             next_slot = (datetime.now() + timedelta(seconds=LOOP_INTERVAL)).strftime("%Y-%m-%d %H:%M:%S")
 
-            # SystemLog 기록
             requests.post(
                 f"{RENDER_BASE_URL}/system_log",
                 json={
@@ -79,12 +86,20 @@ def auto_feedback_loop():
         print(f"💤 {LOOP_INTERVAL/60:.1f}분 대기 중 ...")
         time.sleep(LOOP_INTERVAL)
 
+
 # ─────────────────────────────────────────────
-# 🚀 실행 (Flask와 독립)
+# 🚀 실행 (Auto-Recovery 내장)
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🚀 Genie Autonomous Feedback Layer 시작")
-    thread = threading.Thread(target=auto_feedback_loop, daemon=True)
-    thread.start()
+    print("🚀 Genie Autonomous Feedback Layer v3.2 시작")
+
     while True:
-        time.sleep(3600)  # 메인 스레드 유지용
+        try:
+            thread = threading.Thread(target=auto_feedback_loop, daemon=True)
+            thread.start()
+            thread.join()  # 루프 종료 시까지 대기
+        except Exception as e:
+            print("💥 메인 루프 예외 발생:", e)
+        finally:
+            print("🔄 30초 후 재시작 시도 중 ...")
+            time.sleep(30)
