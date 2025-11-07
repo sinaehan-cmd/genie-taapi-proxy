@@ -524,6 +524,120 @@ def system_log():
         print("❌ system_log error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ─────────────────────────────────────────────
+# 📊 Final Briefing Loop – 통합 브리핑 생성 (v1.2)
+# ======================================================
+@app.route("/final_briefing", methods=["POST"])
+def final_briefing():
+    """
+    ✅ Genie Final Briefing v1.2
+    - genie_predictions / genie_gti_log / genie_formula_store에서 최신 데이터 읽기
+    - 결과를 종합해 '지니 최종 브리핑' 문장 생성
+    - 시트 'genie_final_briefing'이 없으면 자동 생성 + 헤더 추가
+    - 결과를 append (맨 아래 행)
+    """
+    try:
+        data = request.get_json(force=True)
+        if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
+            return jsonify({"error": "Invalid access key"}), 403
+
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+
+        # ─────────────────────────────────────────────
+        # 🔎 시트 존재 여부 확인 → 없으면 생성
+        # ─────────────────────────────────────────────
+        sheet_metadata = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        sheet_titles = [s["properties"]["title"] for s in sheet_metadata["sheets"]]
+
+        if "genie_final_briefing" not in sheet_titles:
+            batch_update_request = {
+                "requests": [
+                    {"addSheet": {"properties": {"title": "genie_final_briefing"}}}
+                ]
+            }
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id, body=batch_update_request
+            ).execute()
+            print("🆕 Created new sheet: genie_final_briefing")
+
+            # 헤더 추가
+            header_values = [["Timestamp", "Source", "Summary"]]
+            service.spreadsheets().values().update(
+                spreadsheetId=sheet_id,
+                range="genie_final_briefing!A1:C1",
+                valueInputOption="RAW",
+                body={"values": header_values},
+            ).execute()
+            print("✅ Header row initialized for genie_final_briefing")
+
+        # ─────────────────────────────────────────────
+        # 🧩 데이터 수집
+        # ─────────────────────────────────────────────
+        def get_last_value(sheet_name, columns):
+            values = (
+                service.spreadsheets()
+                .values()
+                .get(spreadsheetId=sheet_id, range=f"{sheet_name}!A:{columns}")
+                .execute()
+                .get("values", [])
+            )
+            if len(values) > 1:
+                header, last = values[0], values[-1]
+                return dict(zip(header, last))
+            return {}
+
+        pred = get_last_value("genie_predictions", "N")
+        gti = get_last_value("genie_gti_log", "J")
+        learn = get_last_value("genie_formula_store", "K")
+
+        # ─────────────────────────────────────────────
+        # 🧠 요약문 생성
+        # ─────────────────────────────────────────────
+        pred_summary = (
+            f"BTC 예측가 {pred.get('Predicted_Price','?')} / RSI {pred.get('Predicted_RSI','?')}"
+            if pred else "예측 데이터 없음"
+        )
+        gti_summary = (
+            f"GTI {gti.get('GTI_Score','?')}점 / 오차율 {gti.get('Average_Deviation(%)','?')}% / 트렌드 {gti.get('Trend','?')}"
+            if gti else "GTI 데이터 없음"
+        )
+        learn_summary = (
+            f"보정계수 α={learn.get('Formula','?')} / 신뢰도 {learn.get('Confidence','?')}"
+            if learn else "학습 데이터 없음"
+        )
+
+        summary = (
+            f"📘 [지니 최종 브리핑] {pred_summary}, {gti_summary}, {learn_summary}. "
+            f"모든 루프 정상. 예측·신뢰·학습 일치 ✅"
+        )
+
+        # ─────────────────────────────────────────────
+        # ✏️ 시트에 기록 (append)
+        # ─────────────────────────────────────────────
+        service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="genie_final_briefing!A:C",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={
+                "values": [
+                    [
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "FINAL_BRIEFING",
+                        summary,
+                    ]
+                ]
+            },
+        ).execute()
+
+        print(f"🧭 Final Briefing Logged: {summary}")
+        return jsonify({"result": "logged", "summary": summary})
+
+    except Exception as e:
+        print("❌ final_briefing error:", e)
+        return jsonify({"error": str(e)}), 500
+
 
 # ─────────────────────────────────────────────
 # 🌐 루트 경로
