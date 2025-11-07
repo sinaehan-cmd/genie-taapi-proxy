@@ -176,6 +176,38 @@ def view_sheet_json(sheet_name):
             status=500,
             mimetype="text/html",
         )
+# ─────────────────────────────────────────────
+# 🧩 Raw JSON 출력 (지니 접근 100% 보장용)
+# ─────────────────────────────────────────────
+@app.route("/view-raw/<path:sheet_name>")
+def view_sheet_raw(sheet_name):
+    """✅ Google Sheets 데이터를 순수 JSON으로 출력 (no HTML wrapper)"""
+    try:
+        decoded = unquote(sheet_name)
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id, range=decoded
+        ).execute()
+        values = result.get("values", [])
+        if not values or len(values) < 2:
+            return jsonify({"error": "No data found", "sheet": decoded}), 404
+
+        headers = values[0]
+        rows = [dict(zip(headers, row)) for row in values[1:]]
+        response = {
+            "sheet": decoded,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "count": len(rows),
+            "data": rows,
+        }
+        return app.response_class(
+            response=json.dumps(response, ensure_ascii=False, indent=2),
+            status=200,
+            mimetype="application/json",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 
