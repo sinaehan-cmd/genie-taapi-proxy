@@ -353,7 +353,7 @@ def prediction_loop():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
-# 📈 GTI Loop – Prediction Accuracy Evaluator
+# 📈 GTI Loop – Prediction Accuracy Evaluator (v1.2, Safe-Float Edition)
 # ─────────────────────────────────────────────
 @app.route("/gti_loop", methods=["POST"])
 def gti_loop():
@@ -361,9 +361,24 @@ def gti_loop():
         data = request.get_json(force=True)
         if data.get("access_key") != os.getenv("GENIE_ACCESS_KEY"):
             return jsonify({"error": "Invalid access key"}), 403
+
         service = get_sheets_service()
         sheet_id = os.getenv("SHEET_ID")
 
+        # ─────────────────────────────────────────────
+        # 🧩 Helper: 안전한 float 변환
+        # ─────────────────────────────────────────────
+        def safe_float(x):
+            try:
+                if x in ["", None, "값없음", "N/A", "-", "null"]:
+                    return None
+                return float(x)
+            except Exception:
+                return None
+
+        # ─────────────────────────────────────────────
+        # 📊 예측 데이터 가져오기
+        # ─────────────────────────────────────────────
         pred = service.spreadsheets().values().get(
             spreadsheetId=sheet_id, range="genie_predictions!A:N"
         ).execute()
@@ -373,6 +388,9 @@ def gti_loop():
         headers = pv[0]
         last_preds = pv[-5:]
 
+        # ─────────────────────────────────────────────
+        # 📈 실제 시장 데이터 가져오기
+        # ─────────────────────────────────────────────
         data_result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id, range="genie_data_v5!A:Z"
         ).execute()
@@ -381,28 +399,45 @@ def gti_loop():
             return jsonify({"error": "No market data"})
         dh = dv[0]
         ld = dv[-1]
-        actual_price = float(ld[dh.index("BTC/USD")])
+        actual_price = safe_float(ld[dh.index("BTC/USD")])
+
+        if not actual_price:
+            print("⚠️ GTI Loop skipped: no valid actual price")
+            return jsonify({"result": "skipped", "reason": "no valid actual price"})
+
+        # ─────────────────────────────────────────────
+        # 📏 예측과 실제값 비교 → 편차 계산
+        # ─────────────────────────────────────────────
         deviations = []
         for p in last_preds:
-            try:
-                pred_price = float(p[headers.index("Predicted_Price")])
+            pred_price = safe_float(p[headers.index("Predicted_Price")])
+            if pred_price:
                 dev = abs(pred_price - actual_price) / actual_price * 100
                 deviations.append(dev)
-            except Exception:
-                continue
-        if not deviations:
-            return jsonify({"error": "No valid deviations"})
 
+        if not deviations:
+            print("⚠️ GTI Loop skipped: no valid deviations")
+            return jsonify({"result": "skipped", "reason": "no valid deviations"})
+
+        # ─────────────────────────────────────────────
+        # 🧮 평균 오차율 및 GTI 계산
+        # ─────────────────────────────────────────────
         avg_dev = round(sum(deviations) / len(deviations), 2)
         gti_score = max(0, min(100, 100 - avg_dev))
         trend = "Stable" if avg_dev < 2 else "Volatile"
+
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         gti_id = f"GTI.{now.replace(':','-').replace(' ','_')}"
+
+        # ─────────────────────────────────────────────
+        # 📝 시트에 기록
+        # ─────────────────────────────────────────────
         row_data = [[
             gti_id, now, "1h", len(deviations), avg_dev, gti_score,
             "GTI=(100-AvgDeviation)", "Last 5 Predictions", trend,
             "Auto-calculated by Genie"
         ]]
+
         write_service = get_sheets_service(write=True)
         write_service.spreadsheets().values().append(
             spreadsheetId=sheet_id,
@@ -411,11 +446,14 @@ def gti_loop():
             insertDataOption="INSERT_ROWS",
             body={"values": row_data},
         ).execute()
+
         print(f"✅ GTI Logged: {gti_id} (Score={gti_score}, AvgDev={avg_dev}%)")
         return jsonify({"result": "logged", "GTI_Score": gti_score})
+
     except Exception as e:
         print("❌ gti_loop error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 
 # ─────────────────────────────────────────────
