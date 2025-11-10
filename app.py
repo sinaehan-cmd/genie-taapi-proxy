@@ -111,16 +111,24 @@ def view_sheet_html(sheet_name):
         sheet_id = os.getenv("SHEET_ID")
         result = service.spreadsheets().values().get(spreadsheetId=sheet_id, range=decoded).execute()
         values = result.get("values", [])
-        if not values: return "<h3>No data found</h3>"
+        if not values:
+            return "<h3>No data found</h3>"
         table_html = "<table border='1' cellspacing='0' cellpadding='4'>" + "".join(
             "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>" for row in values
         ) + "</table>"
         html = f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>{decoded}</title>
 <style>body{{font-family:'Segoe UI',sans-serif;padding:20px;}}table{{border-collapse:collapse;width:100%;max-width:900px;margin:auto;}}td{{border:1px solid #ccc;padding:6px;font-size:13px;}}tr:nth-child(even){{background-color:#f9f9f9;}}</style></head>
 <body><h2>📘 {decoded}</h2>{table_html}<p style='color:gray;'>Public view for Genie System ✅</p></body></html>"""
-        return render_template_string(html)
+
+        # ✅ 여기 추가 (GPT 접근 허용)
+        from flask import Response
+        response = Response(html, mimetype="text/html")
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+
     except Exception as e:
         return f"<h3>오류: {e}</h3>", 500
+
 
 # ─────────────────────────────────────────────
 # 🌐 Smart JSON 뷰어 (긴급 디버그 전용 버전)
