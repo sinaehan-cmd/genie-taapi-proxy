@@ -130,6 +130,68 @@ def view_sheet_html(sheet_name):
     except Exception as e:
         return f"<h3>오류: {e}</h3>", 500
 
+# ─────────────────────────────────────────────
+# 💱 Upbit 시세 + 환율 변환 (KRW→USD) + 폴백(Binance)
+# ─────────────────────────────────────────────
+
+import hashlib, hmac, uuid
+
+def get_usd_krw_rate():
+    """현재 USD/KRW 환율 (exchangerate.host 기반)"""
+    try:
+        res = requests.get("https://api.exchangerate.host/latest?base=USD&symbols=KRW", timeout=8)
+        data = res.json()
+        return float(data["rates"]["KRW"])
+    except Exception:
+        return 1450.0  # 폴백값
+
+def upbit_get_price_krw(market="KRW-BTC"):
+    """업비트에서 한화 시세 가져오기"""
+    try:
+        url = f"https://api.upbit.com/v1/ticker?markets={market}"
+        res = requests.get(url, timeout=8)
+        j = res.json()
+        return float(j[0].get("trade_price"))
+    except Exception as e:
+        print("⚠️ upbit_get_price_krw error:", e)
+        return None
+
+def binance_get_price_usd(symbol="BTC"):
+    """Binance에서 USD 시세 폴백"""
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}USDT"
+        res = requests.get(url, timeout=8)
+        j = res.json()
+        return float(j["price"])
+    except Exception as e:
+        print("⚠️ binance_get_price_usd error:", e)
+        return None
+
+@app.route("/upbit_price", methods=["GET"])
+def upbit_price():
+    """업비트 + 환율 변환 시세 엔드포인트"""
+    try:
+        symbol = request.args.get("symbol", "BTC")
+        market = f"KRW-{symbol}"
+        krw_price = upbit_get_price_krw(market)
+        usd_price = None
+        rate = get_usd_krw_rate()
+
+        if krw_price:
+            usd_price = round(krw_price / rate, 2)
+            source = "Upbit"
+        else:
+            usd_price = binance_get_price_usd(symbol)
+            source = "Binance (fallback)"
+
+        if not usd_price:
+            return jsonify({"error": "Price fetch failed"}), 500
+
+        result = {
+            "symbol": symbol,
+            "source": source,
+            "price_krw": krw_pr
+
 
 # ─────────────────────────────────────────────
 # 🌐 Smart JSON 뷰어 (긴급 디버그 전용 버전)
