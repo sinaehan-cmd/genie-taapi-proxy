@@ -848,27 +848,7 @@ def auto_gti_loop():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
-
-@app.route("/upbit", methods=["GET"])
-def upbit_price():
-    """업비트 실시간 시세 (BTC/KRW → USD 변환)"""
-    try:
-        market = request.args.get("market", "KRW-BTC")
-        res = requests.get("https://api.upbit.com/v1/ticker", params={"markets": market})
-        data = res.json()[0]
-        krw_price = data["trade_price"]
-        # 환율 시트나 API에서 가져올 수 있다면 아래처럼 적용
-        usd_rate = float(os.getenv("USD_RATE", "1400"))
-        usd_price = round(krw_price / usd_rate, 2)
-        return jsonify({
-            "market": market,
-            "price_krw": krw_price,
-            "price_usd": usd_price,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-        
+       
 # ─────────────────────────────────────────────
 # 🌐 루트 경로
 # ─────────────────────────────────────────────
