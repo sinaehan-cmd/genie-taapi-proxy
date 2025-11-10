@@ -7,11 +7,13 @@ from flask import Flask, jsonify, request, render_template_string
 from flask_cors import CORS
 import requests, os, json, base64
 import hashlib, hmac, uuid
+import jwt, uuid, hashlib, hmac, requests, os, time
 from urllib.parse import unquote
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
 from openai import OpenAI
+from flask import jsonify
 
 # ─────────────────────────────────────────────
 # ⚙️ Flask 기본 세팅
@@ -849,11 +851,11 @@ def auto_gti_loop():
         return jsonify({"status": "error", "message": str(e)})
 
 # ======================================================
-# 💰 Upbit Balance Sync → genie_account_v1
+# 💰 Upbit Balance Sync → genie_account_v1 (JWT+HMAC)
 # ======================================================
-
-import time, uuid, hmac, hashlib, jwt, requests
+import jwt, uuid, requests, os, time
 from datetime import datetime
+from flask import jsonify
 
 @app.route("/upbit_balance", methods=["GET"])
 def upbit_balance():
@@ -863,19 +865,26 @@ def upbit_balance():
         if not access_key or not secret_key:
             return jsonify({"error": "Upbit API key missing"}), 400
 
-        payload = {"access_key": access_key, "nonce": str(uuid.uuid4())}
-        jwt_token = jwt.encode(payload, secret_key)
+        # ✅ 업비트는 HS256 알고리즘으로 서명된 JWT 필요
+        payload = {
+            "access_key": access_key,
+            "nonce": str(uuid.uuid4())
+        }
+        jwt_token = jwt.encode(payload, secret_key, algorithm="HS256")
         headers = {"Authorization": f"Bearer {jwt_token}"}
 
         # 1️⃣ 계좌 데이터 가져오기
         res = requests.get("https://api.upbit.com/v1/accounts", headers=headers, timeout=10)
+        if res.status_code != 200:
+            return jsonify({"error": f"Upbit API Error: {res.status_code}", "body": res.text}), 500
         balances = res.json()
-        if not isinstance(balances, list):
-            return jsonify({"error": "Invalid response from Upbit"}), 500
 
-        # 2️⃣ 환율 가져오기 (USD/KRW)
-        fx = requests.get("https://api.exchangerate.host/latest?base=USD&symbols=KRW", timeout=8).json()
-        usdkrw = float(fx.get("rates", {}).get("KRW", 1450.0))
+        # 2️⃣ 환율 (USD/KRW)
+        try:
+            fx = requests.get("https://api.exchangerate.host/latest?base=USD&symbols=KRW", timeout=8).json()
+            usdkrw = float(fx.get("rates", {}).get("KRW", 1450.0))
+        except Exception:
+            usdkrw = 1450.0
 
         # 3️⃣ 시트 열기
         sheet_name = "genie_account_v1"
@@ -888,7 +897,6 @@ def upbit_balance():
             balance = float(item.get("balance", 0))
             avg_price = float(item.get("avg_buy_price", 0))
 
-            # 0잔고는 제외
             if balance == 0:
                 continue
 
@@ -926,6 +934,7 @@ def upbit_balance():
     except Exception as e:
         print("❌ upbit_balance error:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
        
 # ─────────────────────────────────────────────
