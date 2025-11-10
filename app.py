@@ -848,6 +848,85 @@ def auto_gti_loop():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
+# ======================================================
+# 💰 Upbit Balance Sync → genie_account_v1
+# ======================================================
+
+import time, uuid, hmac, hashlib, jwt, requests
+from datetime import datetime
+
+@app.route("/upbit_balance", methods=["GET"])
+def upbit_balance():
+    try:
+        access_key = os.getenv("UPBIT_ACCESS_KEY")
+        secret_key = os.getenv("UPBIT_SECRET_KEY")
+        if not access_key or not secret_key:
+            return jsonify({"error": "Upbit API key missing"}), 400
+
+        payload = {"access_key": access_key, "nonce": str(uuid.uuid4())}
+        jwt_token = jwt.encode(payload, secret_key)
+        headers = {"Authorization": f"Bearer {jwt_token}"}
+
+        # 1️⃣ 계좌 데이터 가져오기
+        res = requests.get("https://api.upbit.com/v1/accounts", headers=headers, timeout=10)
+        balances = res.json()
+        if not isinstance(balances, list):
+            return jsonify({"error": "Invalid response from Upbit"}), 500
+
+        # 2️⃣ 환율 가져오기 (USD/KRW)
+        fx = requests.get("https://api.exchangerate.host/latest?base=USD&symbols=KRW", timeout=8).json()
+        usdkrw = float(fx.get("rates", {}).get("KRW", 1450.0))
+
+        # 3️⃣ 시트 열기
+        sheet_name = "genie_account_v1"
+        sheet = get_sheet(sheet_name)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        inserted = 0
+        for item in balances:
+            currency = item["currency"].upper()
+            balance = float(item.get("balance", 0))
+            avg_price = float(item.get("avg_buy_price", 0))
+
+            # 0잔고는 제외
+            if balance == 0:
+                continue
+
+            # 현재가 가져오기
+            try:
+                ticker_url = f"https://api.upbit.com/v1/ticker?markets=KRW-{currency}"
+                ticker = requests.get(ticker_url, timeout=5).json()
+                current_price = float(ticker[0]["trade_price"])
+            except Exception:
+                current_price = avg_price
+
+            # 계산
+            value_krw = balance * current_price
+            cost_krw = balance * avg_price
+            pnl = value_krw - cost_krw
+            pnl_pct = (pnl / cost_krw * 100) if cost_krw > 0 else 0
+            usd_value = round(value_krw / usdkrw, 2)
+
+            # 시트에 기록
+            new_row = [
+                f"ACC_{int(time.time())}",
+                now, "Upbit", currency, "KRW",
+                balance, avg_price, current_price,
+                round(value_krw, 2), round(cost_krw, 2),
+                round(pnl, 2), round(pnl_pct, 2),
+                "보유", "갱신", now, "", "", "", "", "",
+                usd_value, "", ""
+            ]
+            sheet.append_row(new_row)
+            inserted += 1
+
+        print(f"✅ Upbit Balance logged {inserted} entries")
+        return jsonify({"status": "ok", "logged": inserted})
+
+    except Exception as e:
+        print("❌ upbit_balance error:", str(e))
+        return jsonify({"error": str(e)}), 500
+
        
 # ─────────────────────────────────────────────
 # 🌐 루트 경로
