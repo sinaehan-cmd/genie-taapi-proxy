@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # ======================================================
-# 🌐 Genie Render Server – Rebuild v3.1
+# 🌐 Genie Render Server – Final Safe Version v3.2
 # ======================================================
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 import requests, os, json, base64
 from datetime import datetime
@@ -44,7 +44,7 @@ def get_binance_price(symbol="BTCUSDT"):
 @app.route("/test")
 def test():
     return jsonify({
-        "status": "✅ Genie Render Server Running (v3.1)",
+        "status": "✅ Genie Render Server Running (v3.2)",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
 
@@ -121,16 +121,68 @@ def git_log():
         return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
+# 📘 View-HTML (지니 접근용, 안전버전)
+# ─────────────────────────────────────────────
+@app.route("/view-html/<path:sheet_name>")
+def view_sheet_html(sheet_name):
+    try:
+        decoded = unquote(sheet_name)
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+        result = service.spreadsheets().values().get(spreadsheetId=sheet_id, range=decoded).execute()
+        values = result.get("values", [])
+        if not values:
+            return "<h3>No data found</h3>"
+
+        table_html = "<table border='1' cellspacing='0' cellpadding='4'>" + "".join(
+            "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>" for row in values
+        ) + "</table>"
+
+        html = f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>{decoded}</title>
+        <style>body{{font-family:'Segoe UI',sans-serif;padding:20px;}}table{{border-collapse:collapse;width:100%;max-width:900px;margin:auto;}}td{{border:1px solid #ccc;padding:6px;font-size:13px;}}tr:nth-child(even){{background-color:#f9f9f9;}}</style></head>
+        <body><h2>📘 {decoded}</h2>{table_html}<p style='color:gray;'>Public view for Genie System ✅</p></body></html>"""
+
+        response = Response(html, mimetype="text/html")
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+
+    except Exception as e:
+        return f"<h3>오류: {e}</h3>", 500
+
+# ─────────────────────────────────────────────
+# 🌐 View-JSON (지니 접근용, 안전버전)
+# ─────────────────────────────────────────────
+@app.route("/view-json/<path:sheet_name>")
+def view_sheet_json(sheet_name):
+    try:
+        decoded = unquote(sheet_name)
+        service = get_sheets_service()
+        sheet_id = os.getenv("SHEET_ID")
+        result = service.spreadsheets().values().get(spreadsheetId=sheet_id, range=decoded).execute()
+        values = result.get("values", [])
+        if not values:
+            return jsonify({"error": "No data found", "sheet": decoded}), 404
+
+        headers = values[0]
+        rows = [dict(zip(headers, row)) for row in values[1:]]
+        return jsonify({"sheet": decoded, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "count": len(rows), "data": rows})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ─────────────────────────────────────────────
 # 🏠 루트 경로
 # ─────────────────────────────────────────────
 @app.route("/")
 def home():
     return jsonify({
-        "status": "Genie Render Server ✅ (v3.1)",
+        "status": "Genie Render Server ✅ (v3.2 Final Safe)",
         "routes": {
             "fetch_price": "/fetch_price",
             "price_write": "/price_write",
-            "git_log": "/git_log"
+            "git_log": "/git_log",
+            "view_html": "/view-html/<sheet_name>",
+            "view_json": "/view-json/<sheet_name>",
         }
     })
 
