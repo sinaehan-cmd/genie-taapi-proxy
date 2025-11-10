@@ -710,6 +710,86 @@ def final_briefing():
         print("❌ final_briefing error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ======================================================
+# 🔮 Genie Self-Improvement Loops (Prediction / GTI / Learning)
+# ======================================================
+
+from datetime import datetime
+import random
+
+@app.route('/prediction_loop', methods=['GET'])
+def prediction_loop():
+    try:
+        sheet_name = 'genie_predictions'
+        sheet = get_sheet(sheet_name)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 랜덤 예측 시뮬레이션 (나중에 실제 모델 결과로 교체)
+        predicted_price = round(random.uniform(95000, 105000), 2)
+        actual_price = round(random.uniform(95000, 105000), 2)
+        deviation = round(abs(predicted_price - actual_price) / actual_price * 100, 2)
+        confidence = round(100 - deviation * 0.8, 2)
+
+        new_row = [
+            f"PRED_{int(datetime.now().timestamp())}",
+            now, now, "BTC",
+            predicted_price, "", "", "", "", confidence,
+            actual_price, deviation, "", "AutoTest"
+        ]
+        sheet.append_row(new_row)
+        print(f"✅ Prediction Logged: {predicted_price} / {actual_price} ({deviation}%)")
+        return jsonify({"status": "ok", "predicted": predicted_price, "actual": actual_price, "deviation": deviation})
+    except Exception as e:
+        print("❌ prediction_loop error:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/gti_loop', methods=['GET'])
+def gti_loop():
+    try:
+        sheet_name = 'genie_gti_log'
+        sheet = get_sheet(sheet_name)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        avg_dev = random.uniform(2, 5)
+        gti_score = round(100 - avg_dev * 0.98, 2)
+
+        new_row = [
+            f"GTI_{int(datetime.now().timestamp())}",
+            now, "1d", random.randint(5, 12),
+            round(avg_dev, 2), gti_score,
+            "(100 - avg_dev * 0.98)",
+            "Auto_Prediction", "Stable", "Auto-Learning"
+        ]
+        sheet.append_row(new_row)
+        print(f"✅ GTI Logged: {gti_score}")
+        return jsonify({"status": "ok", "gti": gti_score})
+    except Exception as e:
+        print("❌ gti_loop error:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/learning_loop', methods=['GET'])
+def learning_loop():
+    try:
+        sheet_name = 'genie_formula_store'
+        sheet = get_sheet(sheet_name)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        formula_name = "GTI_Auto_Adjust"
+        formula_text = "(100 - avg_dev * 0.98)"
+        linked_sheet = "genie_gti_log"
+        version = f"v{now.replace(' ', '').replace(':', '').replace('-', '')}"
+        gti_sample = round(random.uniform(90, 96), 2)
+
+        new_row = [now, formula_name, formula_text, "자동 보정형 GTI 계산식", linked_sheet, version, gti_sample, "Auto-Learning"]
+        sheet.append_row(new_row)
+        print(f"✅ Learning Updated: {formula_name} = {gti_sample}")
+        return jsonify({"status": "ok", "formula": formula_name, "score": gti_sample})
+    except Exception as e:
+        print("❌ learning_loop error:", str(e))
+        return jsonify({"error": str(e)}), 500
+
 
 # ─────────────────────────────────────────────
 # 🌐 루트 경로
