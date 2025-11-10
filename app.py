@@ -710,6 +710,61 @@ def final_briefing():
         print("❌ final_briefing error:", e)
         return jsonify({"error": str(e)}), 500
 
+# ======================================================
+# 🔁 GTI 자동 분석 및 업데이트 엔드포인트
+# ======================================================
+from datetime import datetime
+from flask import jsonify
+
+@app.route('/auto_gti_loop', methods=['POST'])
+def auto_gti_loop():
+    """최근 예측값 vs 실제값 비교 → GTI 자동 계산 및 시트 업데이트"""
+    try:
+        # ① 시트 불러오기
+        predictions = read_sheet('genie_predictions')  # 기존 read 함수 사용
+        valid = [p for p in predictions if p.get('Actual_Price') not in (None, '', '0')]
+
+        if not valid:
+            return jsonify({"status": "no_valid_data"})
+
+        # ② 최근 5개의 예측값과 실제값 비교
+        deviations = []
+        for p in valid[-5:]:
+            pred = float(p['Predicted_Price'])
+            actual = float(p['Actual_Price'])
+            dev = abs(pred - actual) / actual * 100
+            deviations.append(dev)
+
+        avg_dev = round(sum(deviations) / len(deviations), 3)
+        gti = round(100 - (avg_dev * 0.98), 2)
+
+        # ③ GTI 로그 시트에 기록
+        gti_data = [[
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "1h", len(deviations), avg_dev, gti,
+            "GTI = (100 - avg_dev * 0.98)",
+            "auto_gti_loop", "Auto-Learning", "Auto update"
+        ]]
+        write_to_sheet('genie_gti_log', gti_data)
+
+        # ④ 시스템 로그에도 남기기
+        sys_data = [[
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "AUTO_GTI_LOOP", "✅OK",
+            f"GTI={gti} / avg_dev={avg_dev}",
+            "TRUE", "Auto-calculated by Genie"
+        ]]
+        write_to_sheet('genie_system_log', sys_data)
+
+        return jsonify({
+            "status": "success",
+            "GTI": gti,
+            "avg_dev": avg_dev,
+            "samples": len(deviations)
+        })
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 # ─────────────────────────────────────────────
 # 🌐 루트 경로
