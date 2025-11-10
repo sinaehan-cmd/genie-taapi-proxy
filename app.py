@@ -190,7 +190,18 @@ def upbit_price():
         result = {
             "symbol": symbol,
             "source": source,
-            "price_krw": krw_pr
+            "price_krw": krw_price,
+            "price_usd": usd_price,
+            "rate": rate,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        print(f"✅ {symbol} via {source}: {usd_price} USD (rate={rate})")
+        return jsonify(result)
+
+    except Exception as e:
+        print("❌ upbit_price error:", e)
+        return jsonify({"error": str(e)}), 500
 
 
 # ─────────────────────────────────────────────
