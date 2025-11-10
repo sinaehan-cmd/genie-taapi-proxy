@@ -54,6 +54,8 @@ def auto_feedback_loop():
             time.sleep(6)
             call_genie("learning_loop")    # 수식 보정
             time.sleep(6)
+            call_genie("auto_gti_loop")   # ✅ 추가 (GTI 자동분석·보정 루프)
+            time.sleep(6)
             call_genie("reader_loop")      # ✅ 최종 브리핑 읽기 (상태 반영)
             time.sleep(3)
 
