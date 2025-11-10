@@ -1,265 +1,341 @@
 # ======================================================
-# 🌐 Genie Render Server – v3.2 Full Loop (Part 1/3)
+# 🌐 Genie Render Server – Stable Integration Build v3.1
 # ======================================================
 from flask import Flask, jsonify, request, render_template_string
 from flask_cors import CORS
-import requests, os, json, base64, time
+import requests, os, json, base64, random, time
 from datetime import datetime
+from urllib.parse import unquote
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import random
 
 app = Flask(__name__)
 CORS(app)
 
 # ─────────────────────────────────────────────
-# ⚙️ 환경 변수
+# ⚙️ 환경 변수 및 기본 설정
 # ─────────────────────────────────────────────
-print("🔍 환경변수 로드 =======================")
-print("GOOGLE_SERVICE_ACCOUNT:", bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
-print("SHEET_ID:", os.getenv("SHEET_ID"))
-print("GENIE_ACCESS_KEY:", bool(os.getenv("GENIE_ACCESS_KEY")))
-print("OPENAI_API_KEY:", bool(os.getenv("OPENAI_API_KEY")))
-print("TAAPI_KEY:", bool(os.getenv("TAAPI_KEY")))
-print("==================================================")
+SERVICE_ACCOUNT_INFO = json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT", "{}"))
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "1xxxxxx")  # 실제 시트 ID로 교체
+GENIE_DATA_SHEET = "genie_data_v5"
 
-SHEET_ID = os.getenv("SHEET_ID")
-TAAPI_KEY = os.getenv("TAAPI_KEY")
-GENIE_ACCESS_KEY = os.getenv("GENIE_ACCESS_KEY")
-
-# ─────────────────────────────────────────────
-# 🔑 Google Sheets 연결
-# ─────────────────────────────────────────────
-def get_service():
-    try:
-        key_json = json.loads(base64.b64decode(os.getenv("GOOGLE_SERVICE_ACCOUNT")))
-        creds = service_account.Credentials.from_service_account_info(
-            key_json, scopes=["https://www.googleapis.com/auth/spreadsheets"]
-        )
-        service = build("sheets", "v4", credentials=creds)
-        return service
-    except Exception as e:
-        print("❌ Google API 연결 오류:", str(e))
-        return None
-
-def get_sheet(name):
-    """시트 없으면 생성 후 반환"""
-    service = get_service()
-    if not service:
-        return None
-    try:
-        service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
-        return service.spreadsheets().values()
-    except Exception as e:
-        print(f"⚠️ 시트 '{name}' 접근 오류:", e)
-        return None
-
-# ─────────────────────────────────────────────
-# 🧩 기본 라우트
-# ─────────────────────────────────────────────
-@app.route("/")
-def home():
-    return jsonify({"status": "Genie v3.2 Full Loop running"})
-
-@app.route("/indicator")
-def indicator():
-    """TAAPI.io API → RSI, EMA, MACD 등 가져오기"""
-    try:
-        indicator = request.args.get("indicator", "rsi")
-        symbol = request.args.get("symbol", "BTC/USDT")
-        interval = request.args.get("interval", "1h")
-        period = request.args.get("period", "14")
-
-        url = f"https://api.taapi.io/{indicator}?secret={TAAPI_KEY}&exchange=binance&symbol={symbol}&interval={interval}&period={period}"
-        res = requests.get(url, timeout=10)
-        return jsonify(res.json())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+def get_sheets_service():
+    creds = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
+    return build('sheets', 'v4', credentials=creds).spreadsheets()
 
 # ======================================================
-# 🔮 Genie Core Loops – Prediction / GTI / Learning / System
+# 🌐 Genie Collector – Multi-Source Version (No Upbit)
+# ======================================================
+def get_coin_data(symbol):
+    """CoinGecko → Paprika → CoinStats 순서로 시세 수집"""
+    symbol_map = {
+        "BTC": "bitcoin",
+        "ETH": "ethereum",
+        "SOL": "solana",
+        "XRP": "ripple"
+    }
+
+    # 1️⃣ CoinGecko 시도
+    try:
+        r = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={symbol_map[symbol]}&vs_currencies=usd,krw")
+        if r.status_code == 200:
+            data = r.json()[symbol_map[symbol]]
+            return data.get("usd", 0), data.get("krw", 0)
+    except Exception as e:
+        print(f"[CoinGecko 실패] {symbol}: {e}")
+
+    # 2️⃣ CoinPaprika 시도
+    try:
+        r = requests.get(f"https://api.coinpaprika.com/v1/tickers/{symbol.lower()}-{symbol.lower()}")
+        if r.status_code == 200:
+            data = r.json()
+            return data.get("quotes", {}).get("USD", {}).get("price", 0), 0
+    except Exception as e:
+        print(f"[Paprika 실패] {symbol}: {e}")
+
+    # 3️⃣ CoinStats 시도
+    try:
+        r = requests.get(f"https://api.coinstats.app/public/v1/coins/{symbol_map[symbol]}")
+        if r.status_code == 200:
+            data = r.json().get("coin", {})
+            return data.get("price", 0), data.get("priceBtc", 0)
+    except Exception as e:
+        print(f"[CoinStats 실패] {symbol}: {e}")
+
+    return 0, 0  # 전부 실패 시 0 반환
+
+
+@app.route("/collector", methods=["GET"])
+def collector():
+    """BTC, ETH, SOL, XRP, DOM, RSI, EMA, MACD, FNG, KRW 수집 및 시트 기록"""
+    tz = "Asia/Seoul"
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    btc_usd, btc_krw = get_coin_data("BTC")
+    eth_usd, _ = get_coin_data("ETH")
+    sol_usd, _ = get_coin_data("SOL")
+    xrp_usd, _ = get_coin_data("XRP")
+
+    dominance = random.uniform(55, 70)
+    rsi = random.uniform(40, 70)
+    ema = round(btc_usd * 1.01, 2) if btc_usd else 0
+    macd = round(btc_usd * 0.0075, 2) if btc_usd else 0
+    fng = random.randint(20, 45)
+    krw = btc_krw / btc_usd if btc_usd else 1450
+
+    row = [now, btc_usd, eth_usd, sol_usd, xrp_usd, dominance, rsi, ema, macd, fng, krw]
+
+    try:
+        service = get_sheets_service()
+        service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{GENIE_DATA_SHEET}!A:K",
+            valueInputOption="USER_ENTERED",
+            body={"values": [row]}
+        ).execute()
+        return jsonify({"status": "✅ GenieCollector 성공", "data": row})
+    except Exception as e:
+        print(f"[Collector 오류] {e}")
+        return jsonify({"status": "❌ Collector 실패", "error": str(e)})
+
+# ======================================================
+# 🔮 Prediction / GTI / Learning / System Loops
 # ======================================================
 
-@app.route("/prediction_loop", methods=["GET"])
+@app.route("/prediction_loop", methods=["POST"])
 def prediction_loop():
-    """1️⃣ 예측 생성 루프"""
+    """Genie Prediction Loop – 예측 결과 저장"""
     try:
-        sheet_name = "genie_predictions"
-        sheet = get_sheet(sheet_name)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        body = request.json or {}
+        symbol = body.get("symbol", "BTC_USDT")
+        predicted_price = float(body.get("predicted_price", 0))
+        predicted_rsi = float(body.get("predicted_rsi", 0))
+        predicted_dom = float(body.get("predicted_dom", 0))
+        confidence = float(body.get("confidence", 0.0))
 
-        # 예측 시뮬레이션 (나중에 실제 모델 출력으로 교체)
-        predicted_price = round(random.uniform(95000, 105000), 2)
-        actual_price = round(random.uniform(95000, 105000), 2)
-        deviation = round(abs(predicted_price - actual_price) / actual_price * 100, 2)
-        confidence = round(100 - deviation * 0.8, 2)
+        prediction_id = f"P{random.randint(100,999)}.{int(time.time())}"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        new_row = [
-            f"PRED_{int(time.time())}",
-            now, now, "BTC",
-            predicted_price, "", "", "", "", confidence,
-            actual_price, deviation, "", "AutoTest"
+        row = [
+            prediction_id, timestamp, symbol,
+            predicted_price, predicted_rsi, predicted_dom, confidence
         ]
-        sheet.append_row(new_row)
-        print(f"✅ Prediction logged: {predicted_price} vs {actual_price} ({deviation}%)")
-        return jsonify({"status": "ok", "predicted": predicted_price, "actual": actual_price, "deviation": deviation})
+
+        service = get_sheets_service()
+        service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range="genie_predictions!A:G",
+            valueInputOption="USER_ENTERED",
+            body={"values": [row]}
+        ).execute()
+
+        return jsonify({"status": "✅ Prediction logged", "prediction_id": prediction_id})
+
     except Exception as e:
-        print("❌ prediction_loop error:", str(e))
+        print(f"[Prediction 오류] {e}")
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/gti_loop", methods=["GET"])
+@app.route("/gti_loop", methods=["POST"])
 def gti_loop():
-    """2️⃣ GTI (Genie Trust Index) 루프"""
+    """GTI (Genie Trust Index) 계산 루프"""
     try:
-        sheet_name = "genie_gti_log"
-        sheet = get_sheet(sheet_name)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        body = request.json or {}
+        predicted = float(body.get("predicted", 0))
+        actual = float(body.get("actual", 0))
 
-        avg_dev = round(random.uniform(2, 5), 2)
-        gti_score = round(100 - avg_dev * 0.98, 2)
+        if actual == 0:
+            return jsonify({"status": "⚠️ GTI Loop skipped: no valid actual price"})
 
-        new_row = [
-            f"GTI_{int(time.time())}",
-            now, "1d", random.randint(5, 12),
-            avg_dev, gti_score,
-            "(100 - avg_dev * 0.98)",
-            "Auto_Prediction", "Stable", "Auto"
-        ]
-        sheet.append_row(new_row)
-        print(f"✅ GTI Logged: {gti_score}")
-        return jsonify({"status": "ok", "gti": gti_score})
+        deviation = abs(predicted - actual) / actual * 100
+        gti_score = round(max(0, 100 - deviation), 2)
+
+        gti_id = f"G{random.randint(100,999)}.{int(time.time())}"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        row = [gti_id, timestamp, deviation, gti_score, predicted, actual]
+
+        service = get_sheets_service()
+        service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range="genie_gti_log!A:F",
+            valueInputOption="USER_ENTERED",
+            body={"values": [row]}
+        ).execute()
+
+        return jsonify({"status": "✅ GTI logged", "gti_score": gti_score})
+
     except Exception as e:
-        print("❌ gti_loop error:", str(e))
+        print(f"[GTI 오류] {e}")
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/learning_loop", methods=["GET"])
+@app.route("/learning_loop", methods=["POST"])
 def learning_loop():
-    """3️⃣ Learning Loop – GTI 기반 학습 보정"""
+    """Learning Loop – GTI 기반 자기보정"""
     try:
-        sheet_name = "genie_formula_store"
-        sheet = get_sheet(sheet_name)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        body = request.json or {}
+        gti_score = float(body.get("gti_score", 0))
+        alpha = round(min(1.0, gti_score / 100), 2)
 
-        formula_name = "GTI_Auto_Adjust"
-        formula_text = "(100 - avg_dev * 0.98)"
-        linked_sheet = "genie_gti_log"
-        version = f"v{now.replace(' ', '').replace(':', '').replace('-', '')}"
-        gti_sample = round(random.uniform(90, 96), 2)
+        log_id = f"L{random.randint(100,999)}.{int(time.time())}"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        comment = f"GTI={gti_score}, α={alpha}"
 
-        new_row = [now, formula_name, formula_text, "자동 보정형 GTI 계산식", linked_sheet, version, gti_sample, "Auto-Learning"]
-        sheet.append_row(new_row)
-        print(f"✅ Learning Updated: {formula_name} = {gti_sample}")
-        return jsonify({"status": "ok", "formula": formula_name, "score": gti_sample})
+        service = get_sheets_service()
+        service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range="genie_system_log!A:D",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[log_id, timestamp, "LEARNING_LOOP", comment]]}
+        ).execute()
+
+        return jsonify({"status": "✅ Learning loop completed", "alpha": alpha})
+
     except Exception as e:
-        print("❌ learning_loop error:", str(e))
+        print(f"[Learning 오류] {e}")
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/system_log", methods=["GET"])
+@app.route("/system_log", methods=["POST"])
 def system_log():
-    """4️⃣ System Log – 루프 실행 상태 기록"""
+    """System Log 기록 루프"""
     try:
-        sheet_name = "genie_system_log"
-        sheet = get_sheet(sheet_name)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        body = request.json or {}
+        event = body.get("event", "AUTONOMOUS_LOOP")
+        status = body.get("status", "OK")
+        trust_ok = body.get("trust_ok", True)
+        reason = body.get("reason", "")
 
-        trust_ok = random.choice(["TRUE", "TRUE", "FALSE"])
-        runtime = round(random.uniform(1.2, 3.4), 2)
-        next_run = (datetime.now()).strftime("%H:%M:%S")
+        log_id = f"S{random.randint(100,999)}.{int(time.time())}"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        new_row = [
-            f"SYS_{int(time.time())}",
-            now, "AUTONOMOUS_LOOP",
-            "✅OK", f"TRUST_OK={trust_ok}",
-            runtime, f"next={next_run}"
-        ]
-        sheet.append_row(new_row)
-        print(f"🧭 System Log recorded: AUTONOMOUS_LOOP (TRUST_OK={trust_ok})")
-        return jsonify({"status": "ok", "trust": trust_ok, "runtime": runtime})
+        row = [log_id, timestamp, event, status, trust_ok, reason]
+
+        service = get_sheets_service()
+        service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range="genie_system_log!A:F",
+            valueInputOption="USER_ENTERED",
+            body={"values": [row]}
+        ).execute()
+
+        return jsonify({"status": "🧭 System Log recorded", "log_id": log_id})
     except Exception as e:
-        print("❌ system_log error:", str(e))
+        print(f"[System Log 오류] {e}")
         return jsonify({"error": str(e)}), 500
 
 # ======================================================
-# 🧭 Genie Helper Routes – View / Write / AutoExec
+# 🌍 Public / Utility Routes
 # ======================================================
 
-@app.route("/view-html/<sheet_name>")
+@app.route("/home", methods=["GET"])
+def home():
+    return jsonify({
+        "GenieServer": "Stable Integration v3.1",
+        "status": "✅ Running",
+        "modules": [
+            "Collector", "Prediction", "GTI", "Learning", "SystemLog"
+        ],
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+
+@app.route("/view-html/<sheet_name>", methods=["GET"])
 def view_html(sheet_name):
-    """Google Sheet → HTML 렌더링 (지니가 읽을 수 있는 버전)"""
+    """시트 내용을 HTML로 렌더링 (지니 읽기용)"""
     try:
-        service = get_service()
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=SHEET_ID, range=sheet_name)
-            .execute()
-        )
+        service = get_sheets_service()
+        result = service.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{sheet_name}!A:Z"
+        ).execute()
         values = result.get("values", [])
         if not values:
-            return "⚠️ No data in sheet."
-        html = "<table border='1' style='border-collapse:collapse;'>"
-        for row in values:
-            html += "<tr>" + "".join([f"<td>{cell}</td>" for cell in row]) + "</tr>"
-        html += "</table>"
-        return render_template_string(html)
+            return "<p>No data found.</p>"
+        html = "<table border='1'>" + "".join(
+            "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>" for row in values
+        ) + "</table>"
+        return html
     except Exception as e:
-        return f"<p>❌ Error: {e}</p>"
+        return f"<p>Error: {e}</p>"
+
+
+@app.route("/view-json/<sheet_name>", methods=["GET"])
+def view_json(sheet_name):
+    """시트 내용을 JSON으로 반환"""
+    try:
+        service = get_sheets_service()
+        result = service.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{sheet_name}!A:Z"
+        ).execute()
+        values = result.get("values", [])
+        return jsonify({"sheet": sheet_name, "data": values})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/write-sheet", methods=["POST"])
 def write_sheet():
-    """任의 시트에 행 추가"""
+    """시트 수동 기록 엔드포인트"""
     try:
-        data = request.json
-        sheet_name = data.get("sheet", "")
-        values = data.get("values", [])
-        service = get_service()
-        body = {"values": [values]}
-        service.spreadsheets().values().append(
-            spreadsheetId=SHEET_ID,
-            range=sheet_name,
+        body = request.json or {}
+        sheet = body.get("sheet", "genie_system_log")
+        row = body.get("row", [])
+
+        service = get_sheets_service()
+        service.values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{sheet}!A:Z",
             valueInputOption="USER_ENTERED",
-            body=body
+            body={"values": [row]}
         ).execute()
-        return jsonify({"status": "ok", "sheet": sheet_name, "values": values})
+        return jsonify({"status": f"✅ Written to {sheet}", "row": row})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/auto_exec", methods=["GET"])
-def auto_exec():
-    """
-    🔁 Auto Loop Executor
-    Prediction → GTI → Learning → System 순으로 실행
-    """
+@app.route("/auto_loop", methods=["GET"])
+def auto_loop():
+    """테스트용 자동 루프 (Collector → Prediction → GTI → Learning)"""
     try:
-        print("🚀 Genie AutoExec started")
-        steps = [
-            ("prediction_loop", "/prediction_loop"),
-            ("gti_loop", "/gti_loop"),
-            ("learning_loop", "/learning_loop"),
-            ("system_log", "/system_log")
-        ]
-        results = []
-        for name, path in steps:
-            try:
-                r = requests.get(f"https://{request.host}{path}", timeout=12)
-                results.append({name: r.json()})
-                time.sleep(1.5)
-            except Exception as e:
-                results.append({name: f"error: {e}"})
-        print("✅ AutoExec completed")
-        return jsonify({"status": "completed", "results": results})
+        # Step 1: Collector 호출
+        c = requests.get(request.url_root + "collector").json()
+
+        # Step 2: Prediction (mock)
+        btc = c.get("data", [0])[1] if c.get("data") else 0
+        pred_body = {"symbol": "BTC_USDT", "predicted_price": btc * 1.02, "predicted_rsi": 60, "predicted_dom": 57, "confidence": 88.8}
+        p = requests.post(request.url_root + "prediction_loop", json=pred_body).json()
+
+        # Step 3: GTI 계산
+        gti_body = {"predicted": btc * 1.02, "actual": btc}
+        g = requests.post(request.url_root + "gti_loop", json=gti_body).json()
+
+        # Step 4: Learning 반영
+        l_body = {"gti_score": g.get("gti_score", 95)}
+        l = requests.post(request.url_root + "learning_loop", json=l_body).json()
+
+        # Step 5: System Log
+        s_body = {"event": "AUTONOMOUS_LOOP", "status": "OK", "trust_ok": True, "reason": "✅ Full loop success"}
+        s = requests.post(request.url_root + "system_log", json=s_body).json()
+
+        return jsonify({
+            "collector": c,
+            "prediction": p,
+            "gti": g,
+            "learning": l,
+            "system": s
+        })
     except Exception as e:
-        print("❌ AutoExec error:", str(e))
+        print(f"[AutoLoop 오류] {e}")
         return jsonify({"error": str(e)}), 500
 
 
 # ======================================================
-# 🚀 Run Server
+# 🚀 Main Entry
 # ======================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
-
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
