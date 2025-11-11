@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, Response
 from urllib.parse import unquote
 from utils.google_sheets import get_sheets_service
 from config import SHEET_ID
+from flask_cors import CORS
 import json
 from datetime import datetime
 
@@ -47,3 +48,4 @@ def view_json(sheet_name):
     }
     html = f"<pre>{json.dumps(response, ensure_ascii=False, indent=2)}</pre>"
     return html
+
