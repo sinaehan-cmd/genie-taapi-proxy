@@ -1,5 +1,5 @@
 # ======================================================
-# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11.13-p3)
+# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11.13-p4)
 # ======================================================
 from flask import Blueprint, request, jsonify, Response
 from urllib.parse import unquote
@@ -7,7 +7,7 @@ from utils.google_sheets import get_sheets_service
 from config import SHEET_ID
 from flask_cors import CORS
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 bp = Blueprint("view_routes", __name__)
 
@@ -53,7 +53,7 @@ def view_html(sheet_name):
 
 
 # ------------------------------------------------------
-# 🧩 2️⃣ JSON API 보기용 (7일치 전체 데이터 반환)
+# 🧩 2️⃣ JSON API 보기용 (최근 N개 행 기준)
 # ------------------------------------------------------
 @bp.route("/view-json/<path:sheet_name>")
 def view_json(sheet_name):
@@ -71,43 +71,15 @@ def view_json(sheet_name):
         headers = values[0]
         rows = [dict(zip(headers, row)) for row in values[1:]]
 
-        # 🕒 최근 7일 데이터만 필터링 (시간까지 포함)
-        now = datetime.now()
-        seven_days_ago = now - timedelta(days=7)
-        filtered_rows = []
+        # ✅ 최근 N개 행만 반환 (예: 약 1주일치)
+        N_RECENT_ROWS = 300
+        filtered_rows = rows[-N_RECENT_ROWS:]
 
-        for row in rows:
-            ts_str = row.get("timestamp") or row.get("Timestamp") or row.get("시간") or row.get("기준시간")
-            if not ts_str:
-                continue
-            ts = None
-            possible_formats = [
-                "%Y-%m-%d %H:%M:%S",  # 2025-11-13 19:43:09
-                "%Y-%m-%d",
-                "%Y/%m/%d %H:%M:%S",
-                "%Y/%m/%d",
-                "%Y.%m.%d %H:%M:%S",
-                "%Y.%m.%d",
-            ]
-            for fmt in possible_formats:
-                try:
-                    ts = datetime.strptime(ts_str.strip(), fmt)
-                    break
-                except Exception:
-                    continue
-            if ts and ts >= seven_days_ago:
-                filtered_rows.append(row)
-
-        # ✅ 필터링 결과가 비어도 최소한 5개는 보여줌
-        if not filtered_rows:
-            filtered_rows = rows[-5:]
-
-        # ✅ 전체 7일치 데이터 반환 (자르지 않음)
         response = {
             "sheet": decoded,
-            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "count": len(filtered_rows),
-            "data": filtered_rows,  # ← 전체 반환
+            "data": filtered_rows,  # ✅ 최근 300행 전체 반환
         }
 
         resp = jsonify(response)
