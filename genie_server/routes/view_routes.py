@@ -1,5 +1,5 @@
 # ======================================================
-# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11.13-p2)
+# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11.13-p3)
 # ======================================================
 from flask import Blueprint, request, jsonify, Response
 from urllib.parse import unquote
@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 bp = Blueprint("view_routes", __name__)
 
 # ------------------------------------------------------
-# 📘 1️⃣ HTML 보기용 (기존 그대로 유지)
+# 📘 1️⃣ HTML 보기용 (그대로 유지)
 # ------------------------------------------------------
 @bp.route("/view-html/<path:sheet_name>")
 def view_html(sheet_name):
@@ -53,7 +53,7 @@ def view_html(sheet_name):
 
 
 # ------------------------------------------------------
-# 🧩 2️⃣ JSON API 보기용 (지니 자동 브리핑용)
+# 🧩 2️⃣ JSON API 보기용 (7일치 전체 데이터 반환)
 # ------------------------------------------------------
 @bp.route("/view-json/<path:sheet_name>")
 def view_json(sheet_name):
@@ -71,7 +71,7 @@ def view_json(sheet_name):
         headers = values[0]
         rows = [dict(zip(headers, row)) for row in values[1:]]
 
-        # 🕒 최근 7일 데이터만 필터링 (지니 부하 방지)
+        # 🕒 최근 7일 데이터만 필터링 (시간까지 포함)
         now = datetime.now()
         seven_days_ago = now - timedelta(days=7)
         filtered_rows = []
@@ -81,14 +81,13 @@ def view_json(sheet_name):
             if not ts_str:
                 continue
             ts = None
-            # ✅ 여러 포맷 인식 (날짜 + 시간 대응)
             possible_formats = [
                 "%Y-%m-%d %H:%M:%S",  # 2025-11-13 19:43:09
-                "%Y-%m-%d",           # 2025-11-13
-                "%Y/%m/%d %H:%M:%S",  # 2025/11/13 19:43:09
-                "%Y/%m/%d",           # 2025/11/13
-                "%Y.%m.%d %H:%M:%S",  # 2025.11.13 19:43:09
-                "%Y.%m.%d"            # 2025.11.13
+                "%Y-%m-%d",
+                "%Y/%m/%d %H:%M:%S",
+                "%Y/%m/%d",
+                "%Y.%m.%d %H:%M:%S",
+                "%Y.%m.%d",
             ]
             for fmt in possible_formats:
                 try:
@@ -99,15 +98,16 @@ def view_json(sheet_name):
             if ts and ts >= seven_days_ago:
                 filtered_rows.append(row)
 
-        # 만약 타임스탬프 컬럼이 없거나 필터링 결과가 비면 최근 5행 표시
+        # ✅ 필터링 결과가 비어도 최소한 5개는 보여줌
         if not filtered_rows:
             filtered_rows = rows[-5:]
 
+        # ✅ 전체 7일치 데이터 반환 (자르지 않음)
         response = {
             "sheet": decoded,
             "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
             "count": len(filtered_rows),
-            "data": filtered_rows,
+            "data": filtered_rows,  # ← 전체 반환
         }
 
         resp = jsonify(response)
