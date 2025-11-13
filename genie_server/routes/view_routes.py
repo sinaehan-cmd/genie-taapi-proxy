@@ -1,5 +1,5 @@
 # ======================================================
-# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11)
+# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11.13-p2)
 # ======================================================
 from flask import Blueprint, request, jsonify, Response
 from urllib.parse import unquote
@@ -80,14 +80,26 @@ def view_json(sheet_name):
             ts_str = row.get("timestamp") or row.get("Timestamp") or row.get("시간") or row.get("기준시간")
             if not ts_str:
                 continue
-            try:
-                ts = datetime.strptime(ts_str.split()[0], "%Y-%m-%d")
-                if ts >= seven_days_ago:
-                    filtered_rows.append(row)
-            except Exception:
-                continue
+            ts = None
+            # ✅ 여러 포맷 인식 (날짜 + 시간 대응)
+            possible_formats = [
+                "%Y-%m-%d %H:%M:%S",  # 2025-11-13 19:43:09
+                "%Y-%m-%d",           # 2025-11-13
+                "%Y/%m/%d %H:%M:%S",  # 2025/11/13 19:43:09
+                "%Y/%m/%d",           # 2025/11/13
+                "%Y.%m.%d %H:%M:%S",  # 2025.11.13 19:43:09
+                "%Y.%m.%d"            # 2025.11.13
+            ]
+            for fmt in possible_formats:
+                try:
+                    ts = datetime.strptime(ts_str.strip(), fmt)
+                    break
+                except Exception:
+                    continue
+            if ts and ts >= seven_days_ago:
+                filtered_rows.append(row)
 
-        # 만약 타임스탬프 컬럼이 없으면 전체 중 최근 5개만 표시
+        # 만약 타임스탬프 컬럼이 없거나 필터링 결과가 비면 최근 5행 표시
         if not filtered_rows:
             filtered_rows = rows[-5:]
 
