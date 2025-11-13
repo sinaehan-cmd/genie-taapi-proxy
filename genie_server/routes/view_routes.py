@@ -1,15 +1,36 @@
 # ======================================================
-# 🌐 view_routes.py – Genie Render Server HTML + JSON (v2025.11.13-Final)
+# 🌐 view_routes.py – Genie Render Server HTML + JSON (v2025.11.13-Final + nocache)
 # ======================================================
-from flask import Blueprint, Response
+from flask import Blueprint, Response, request, redirect
 from urllib.parse import unquote
 from utils.google_sheets import get_sheets_service
 from config import SHEET_ID
 from datetime import datetime
 from itertools import zip_longest
-import json
+import json, time
 
 bp = Blueprint("view_routes", __name__)
+
+# ------------------------------------------------------
+# 🚫 캐시 방지용 nocache 파라미터 자동 추가
+# ------------------------------------------------------
+@bp.before_app_request
+def append_nocache_param():
+    # 정적 파일이나 favicon은 제외
+    if request.path.startswith("/static") or "favicon" in request.path:
+        return None
+
+    # 이미 nocache 파라미터가 붙어있으면 그대로 진행
+    if "nocache" in request.args:
+        return None
+
+    # 새 nocache 값 추가 후 리다이렉트
+    timestamp = int(time.time())
+    new_url = f"{request.path}?nocache={timestamp}"
+    if request.query_string:
+        new_url = f"{request.path}?{request.query_string.decode()}&nocache={timestamp}"
+
+    return redirect(new_url)
 
 # ------------------------------------------------------
 # 📘 HTML 보기용
@@ -132,3 +153,13 @@ def view_json(sheet_name):
     except Exception as e:
         err = {"error": str(e)}
         return Response(json.dumps(err, ensure_ascii=False), mimetype="application/json", status=500)
+
+# ------------------------------------------------------
+# 🔒 모든 응답 캐시 비활성화 헤더 추가
+# ------------------------------------------------------
+@bp.after_app_request
+def add_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
