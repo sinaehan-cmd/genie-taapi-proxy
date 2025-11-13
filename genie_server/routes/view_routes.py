@@ -1,5 +1,5 @@
 # ======================================================
-# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11.13-p5)
+# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11.13-p7-safezip)
 # ======================================================
 from flask import Blueprint, jsonify, Response
 from urllib.parse import unquote
@@ -49,7 +49,7 @@ def view_html(sheet_name):
 
 
 # ------------------------------------------------------
-# 🧩 2️⃣ JSON API 보기용 (최근 N개 행 기준, fallback 완전 제거)
+# 🧩 2️⃣ JSON API 보기용 (열 길이 보정 + 최근 N행 반환)
 # ------------------------------------------------------
 @bp.route("/view-json/<path:sheet_name>")
 def view_json(sheet_name):
@@ -65,9 +65,16 @@ def view_json(sheet_name):
             return jsonify({"error": "No data found"}), 404
 
         headers = values[0]
-        rows = [dict(zip(headers, row)) for row in values[1:]]
+        rows = []
 
-        # ✅ 최근 N개 행만 반환 (예: 1주일치 약 300행)
+        # ✅ 행별로 열 개수 불일치 보정
+        for row in values[1:]:
+            while len(row) < len(headers):
+                row.append("")  # 부족한 열은 빈칸으로 채움
+            row = row[:len(headers)]  # 초과 열은 잘라냄
+            rows.append(dict(zip(headers, row)))
+
+        # ✅ 최근 N개 행만 반환 (예: 약 1주일치)
         N_RECENT_ROWS = 300
         filtered_rows = rows[-N_RECENT_ROWS:]
 
@@ -75,12 +82,13 @@ def view_json(sheet_name):
             "sheet": decoded,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "count": len(filtered_rows),
-            "data": filtered_rows,  # ✅ 최근 300행 전부 반환
+            "data": filtered_rows,  # ✅ 정상화된 전체 300행 반환
         }
 
         resp = jsonify(response)
         resp.headers["Access-Control-Allow-Origin"] = "*"
         resp.headers["Cache-Control"] = "no-store"
         return resp
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
