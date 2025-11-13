@@ -49,6 +49,58 @@ def view_html(sheet_name):
         return f"<h3>오류 발생: {e}</h3>", 500
 
 
+
+# ------------------------------------------------------
+# 🪄 3️⃣ GPT 접근용 – HTML에 JSON 포장 (view-html-json)
+# ------------------------------------------------------
+@bp.route("/view-html-json/<path:sheet_name>")
+def view_html_json(sheet_name):
+    try:
+        from datetime import datetime
+        from urllib.parse import unquote
+        import json
+
+        decoded = unquote(sheet_name)
+        service = get_sheets_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID, range=decoded
+        ).execute()
+        values = result.get("values", [])
+
+        if not values:
+            html = "<h3>No data found</h3>"
+        else:
+            headers = values[0]
+            rows = [dict(zip(headers, row)) for row in values[1:]]
+            recent_rows = rows[-308:]  # ✅ 최근 7일(약 308개) 데이터만
+            payload = {
+                "sheet": decoded,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "count": len(recent_rows),
+                "data": recent_rows,
+            }
+            json_str = json.dumps(payload, ensure_ascii=False, indent=2)
+            html = f"""
+            <!DOCTYPE html><html><head><meta charset='utf-8'>
+            <title>{decoded} JSON View</title>
+            <style>
+                body {{ font-family: monospace; background: #111; color: #0f0; padding: 20px; }}
+                pre {{ white-space: pre-wrap; word-wrap: break-word; }}
+            </style></head><body>
+            <h2>🧩 JSON Data – {decoded}</h2>
+            <pre>{json_str}</pre>
+            </body></html>
+            """
+
+        response = Response(html, mimetype="text/html")
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    except Exception as e:
+        error_html = f"<h3>오류 발생: {e}</h3>"
+        return Response(error_html, mimetype="text/html", status=500)
+
 # ------------------------------------------------------
 # 🧩 JSON API (열 개수 불일치 완전 보정 + 최근 168행)
 # ------------------------------------------------------
@@ -86,3 +138,4 @@ def view_json(sheet_name):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
