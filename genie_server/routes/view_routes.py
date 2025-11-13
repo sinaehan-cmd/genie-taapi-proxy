@@ -1,16 +1,17 @@
 # ======================================================
-# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11.13-p8-fixedRange168)
+# 🌐 view_routes.py – Genie Render Server JSON+HTML Viewer (v2025.11.13-p10-ziplongest)
 # ======================================================
 from flask import Blueprint, jsonify, Response
 from urllib.parse import unquote
 from utils.google_sheets import get_sheets_service
 from config import SHEET_ID
 from datetime import datetime
+from itertools import zip_longest  # ✅ 추가
 
 bp = Blueprint("view_routes", __name__)
 
 # ------------------------------------------------------
-# 📘 1️⃣ HTML 보기용 (그대로 유지)
+# 📘 HTML 보기용 (그대로 유지)
 # ------------------------------------------------------
 @bp.route("/view-html/<path:sheet_name>")
 def view_html(sheet_name):
@@ -49,7 +50,7 @@ def view_html(sheet_name):
 
 
 # ------------------------------------------------------
-# 🧩 2️⃣ JSON API 보기용 (최근 168행 고정)
+# 🧩 JSON API (열 개수 불일치 완전 보정 + 최근 168행)
 # ------------------------------------------------------
 @bp.route("/view-json/<path:sheet_name>")
 def view_json(sheet_name):
@@ -60,23 +61,16 @@ def view_json(sheet_name):
             spreadsheetId=SHEET_ID, range=decoded
         ).execute()
         values = result.get("values", [])
-
         if not values:
             return jsonify({"error": "No data found"}), 404
 
         headers = values[0]
-        rows = []
 
-        # ✅ 열 개수 불일치 자동 보정
-        for row in values[1:]:
-            while len(row) < len(headers):
-                row.append("")
-            row = row[:len(headers)]
-            rows.append(dict(zip(headers, row)))
+        # ✅ zip_longest로 열 개수 자동 맞추기
+        rows = [dict(zip_longest(headers, row, fillvalue="")) for row in values[1:]]
 
-        # ✅ 무조건 최근 168행 반환 (≈ 7일치)
-        N_RECENT_ROWS = 168
-        filtered_rows = rows[-N_RECENT_ROWS:]
+        # ✅ 최근 168행만 반환
+        filtered_rows = rows[-168:]
 
         response = {
             "sheet": decoded,
