@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify
-from utils.mvrv_fetcher import get_mvrv_z
+from genie_server.utils.mvrv_fetcher import get_mvrv_z
 
 bp = Blueprint("mvrv_route", __name__)
 
