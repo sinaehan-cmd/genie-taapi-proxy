@@ -3,7 +3,7 @@
 # ======================================================
 from flask import Blueprint, Response, request, redirect
 from urllib.parse import unquote
-from utils.google_sheets import get_sheets_service
+from genie_server.utils.google_sheets import get_sheets_service
 from config import SHEET_ID
 from datetime import datetime
 from itertools import zip_longest
@@ -163,3 +163,4 @@ def add_no_cache_headers(response):
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
