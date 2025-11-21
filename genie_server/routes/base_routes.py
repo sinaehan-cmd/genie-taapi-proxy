@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify
 from datetime import datetime
-from config import SHEET_ID
+from genie_server.config import SHEET_ID
 
 bp = Blueprint("base", __name__)
 
@@ -34,3 +34,4 @@ def home():
             "system_log": "/system_log",
         },
     })
+
