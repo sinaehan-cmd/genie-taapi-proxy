@@ -1,7 +1,8 @@
 import json, base64
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from config import GOOGLE_SERVICE_ACCOUNT
+from genie_server.config import GOOGLE_SERVICE_ACCOUNT
+
 
 def get_sheets_service(write=False):
     """Google Sheets API 서비스 객체 생성"""
@@ -22,3 +23,4 @@ def get_sheets_service(write=False):
         creds_dict, scopes=scopes
     )
     return build("sheets", "v4", credentials=credentials, cache_discovery=False)
+
