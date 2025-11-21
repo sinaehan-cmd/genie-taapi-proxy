@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from genie_server.utils.google_sheets import get_sheets_service
-from config import SHEET_ID, GENIE_ACCESS_KEY
+from genie_server.config import SHEET_ID, GENIE_ACCESS_KEY
 
 bp = Blueprint("write_routes", __name__)
 
@@ -25,4 +25,5 @@ def write_data():
     except Exception as e:
         print("❌ write 오류:", e)
         return jsonify({"error": str(e)}), 500
+
 
