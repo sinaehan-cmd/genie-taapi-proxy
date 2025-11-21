@@ -20,6 +20,9 @@ def auto_loop():
             "/gti_loop",
             "/learning_loop",
             "/system_log",
+
+            # ⭐ 여기 추가: MVRV_Z 자동 수집 루프
+            "/mvrv_loop",
         ]:
             print(f"📡 호출: {endpoint}")
             r = requests.get(f"http://localhost:8080{endpoint}")
