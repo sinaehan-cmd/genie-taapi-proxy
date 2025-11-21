@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify
 import requests, time
-from utils.helpers import generate_briefing_id
+from genie_server.utils.helpers import generate_briefing_id
 from genie_server.config import SHEET_ID, GENIE_ACCESS_KEY
 
 bp = Blueprint("loop_auto", __name__)
@@ -37,4 +37,5 @@ def auto_loop():
     except Exception as e:
         print("❌ AutoLoop Error:", e)
         return jsonify({"error": str(e)}), 500
+
 
