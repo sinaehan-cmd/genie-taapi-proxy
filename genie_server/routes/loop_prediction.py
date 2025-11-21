@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify
 import requests, datetime, json
 from utils.helpers import safe_float
-from config import SHEET_ID
+from genie_server.config import SHEET_ID
 
 bp = Blueprint("loop_prediction", __name__)
 
@@ -31,3 +31,4 @@ def prediction_loop():
     except Exception as e:
         print("❌ Prediction Loop Error:", e)
         return jsonify({"error": str(e)}), 500
+
