@@ -5,13 +5,17 @@
 
 import requests
 import json
+import random
 from datetime import datetime, timedelta
 
 def safe_get(url, timeout=10):
-    """HTTP 요청을 안정적으로 수행 (User-Agent 추가 버전)"""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; GenieSystem/1.0; +https://genie-system)"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; GenieSystem/1.0)"}
+
+    # ⭐ 랜덤값으로 차단·캐싱 우회
+    if "?" in url:
+        url = url + f"&r={random.randint(100000,999999)}"
+    else:
+        url = url + f"?r={random.randint(100000,999999)}"
 
     try:
         res = requests.get(url, headers=headers, timeout=timeout)
@@ -20,7 +24,6 @@ def safe_get(url, timeout=10):
         return None
     except Exception:
         return None
-
 
 
 def compute_mvrv_fallback():
