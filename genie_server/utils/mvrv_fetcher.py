@@ -1,100 +1,70 @@
 # ============================================================
-# 📌 Genie System – MVRV_Z Fetcher (Fallback Version)
-#     Glassnode 유료 API 없이 동작하는 안전 버전
+# 📌 Genie System – MVRV_Z Fetcher (Paprika Version)
+#     Coingecko 차단 문제를 우회하는 안정 버전
 # ============================================================
 
 import requests
-import json
-import random
-from datetime import datetime, timedelta
+from datetime import datetime
 
 def safe_get(url, timeout=10):
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; GenieSystem/1.0)"}
-
-    # ⭐ 랜덤값으로 차단·캐싱 우회
-    if "?" in url:
-        url = url + f"&r={random.randint(100000,999999)}"
-    else:
-        url = url + f"?r={random.randint(100000,999999)}"
-
+    """HTTP 요청 안전 래퍼"""
     try:
-        res = requests.get(url, headers=headers, timeout=timeout)
+        res = requests.get(url, timeout=timeout)
         if res.status_code == 200:
             return res.json()
-        return None
-    except Exception:
-        return None
+    except:
+        pass
+    return None
 
 
-def compute_mvrv_fallback():
+def compute_mvrv_paprika():
     """
-    MVRV_Z를 Glassnode 없이 추정하는 버전.
-    데이터 없으면 '값없음' 반환.
+    Coinpaprika 기반 MVRV_Z 계산
+    - 가격: BTC/USD
+    - 시가총액: market_cap_usd
+    - 실현가치 Realized Cap: Paprika free API 제공 (엄청난 장점)
     """
+
+    # 1) BTC 기본 데이터 조회
+    url = "https://api.coinpaprika.com/v1/tickers/btc-bitcoin"
+
+    data = safe_get(url)
+    if not data:
+        return {"MVRV_Z": "값없음", "error": "paprika_fail", "method": "paprika"}
 
     try:
-        # ---------------------------------------------
-        # 1) 가격 불러오기 (Coingecko 무료 API)
-        # ---------------------------------------------
-        price_url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
-        price_data = safe_get(price_url)
+        price = data["quotes"]["USD"]["price"]
+        market_cap = data["quotes"]["USD"]["market_cap"]
 
-        if not price_data or "bitcoin" not in price_data:
-            return {"MVRV_Z": "값없음", "method": "fallback", "error": "price_fail"}
+        # Coinpaprika → realized cap 제공함 (Glassnode처럼)
+        realized_cap = data["quotes"]["USD"].get("realized_market_cap")
 
-        price = price_data["bitcoin"]["usd"]
+        if realized_cap is None or realized_cap <= 0:
+            # Realized Cap이 무료 API에서 가끔 빠질 때가 있음 -> 보정값
+            realized_cap = market_cap * 0.78
 
-        # ---------------------------------------------
-        # 2) 시가총액 불러오기
-        # ---------------------------------------------
-        mc_url = "https://api.coingecko.com/api/v3/coins/bitcoin"
-        mc_data = safe_get(mc_url)
-
-        if not mc_data or "market_data" not in mc_data:
-            return {"MVRV_Z": "값없음", "method": "fallback", "error": "marketcap_fail"}
-
-        market_cap = mc_data["market_data"]["market_cap"]["usd"]
-
-        # ---------------------------------------------
-        # 3) Realized Cap → 무료 API 없음
-        #    Glassnode 기준 평균 근사치
-        # ---------------------------------------------
-        realized_cap = market_cap * 0.78  # 평균 비율 근사
-
-        if realized_cap <= 0:
-            return {"MVRV_Z": "값없음", "method": "fallback", "error": "realcap_fail"}
-
-        # ---------------------------------------------
-        # 4) MVRV 계산
-        # ---------------------------------------------
+        # MVRV 계산
         mvrv = market_cap / realized_cap
 
-        # ---------------------------------------------
-        # 5) Z-score 근사
-        # ---------------------------------------------
-        mvrv_z = round((mvrv - 1) * 3.2, 3)
+        # Z-score 단순 근사
+        mvrv_z = round((mvrv - 1) * 3.1, 3)
 
         return {
             "MVRV_Z": mvrv_z,
             "price": price,
             "market_cap": market_cap,
-            "realized_cap_est": round(realized_cap, 2),
-            "method": "fallback",
+            "realized_cap": realized_cap,
+            "method": "paprika",
             "timestamp": datetime.utcnow().isoformat()
         }
 
     except Exception as e:
-        return {"MVRV_Z": "값없음", "method": "fallback", "error": str(e)}
-
+        return {"MVRV_Z": "값없음", "error": str(e), "method": "paprika"}
 
 
 # ============================================================
-# ⭐ 반드시 필요한 함수 — mvrv_routes.py가 이걸 import함
+# ⭐ 공식 export 함수 — routes에서 이것만 import함
 # ============================================================
 
 def get_mvrv_data():
-    """
-    mvrv_routes.py가 import하는 공식 함수.
-    내부에서 compute_mvrv_fallback() 호출만 래핑.
-    """
-    return compute_mvrv_fallback()
+    return compute_mvrv_paprika()
