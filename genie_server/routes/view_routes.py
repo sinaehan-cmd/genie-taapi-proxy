@@ -121,7 +121,7 @@ def view_html_json(sheet_name):
 
 
 # ------------------------------------------------------
-# 🧩 JSON API (대용량 대응, 잘림 방지)
+# 🧩 JSON API (대용량 대응 + 최근 168개만 제공)
 # ------------------------------------------------------
 @bp.route("/view-json/<path:sheet_name>")
 def view_json(sheet_name):
@@ -135,12 +135,27 @@ def view_json(sheet_name):
         if not values:
             return Response(json.dumps({"error": "No data found"}), mimetype="application/json")
 
+        # ------------------------------
+        # 1) 헤더 / rows 생성
+        # ------------------------------
         headers = values[0]
         rows = [dict(zip_longest(headers, row, fillvalue="")) for row in values[1:]]
+
+        # ------------------------------
+        # 2) 최근 n개만 자르기 (기본 168개)
+        # ------------------------------
+        LIMIT = 168
+        if len(rows) > LIMIT:
+            rows = rows[-LIMIT:]   # 최신 168개만 남기기
+
+        # ------------------------------
+        # 3) payload 구성
+        # ------------------------------
         payload = {
             "sheet": decoded,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "count": len(rows),
+            "limit": LIMIT,
             "data": rows,
         }
 
@@ -163,5 +178,6 @@ def add_no_cache_headers(response):
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
 
 
