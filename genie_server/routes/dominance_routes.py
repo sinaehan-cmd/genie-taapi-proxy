@@ -1,40 +1,75 @@
+# ============================================================
+# 🌐 Genie Server – Dominance Routes (Full Stable Version)
+# ============================================================
+
 from flask import Blueprint, jsonify
 from genie_server.utils.dominance_fetcher import (
     get_current_dominance,
     get_avg,
-    get_dominance_packet
+    add_snapshot
 )
 
 bp = Blueprint("dominance", __name__, url_prefix="/dominance")
 
 
-@bp.route("/now")
-def dominance_now():
-    """단일 현재 도미넌스 조회"""
-    v = get_current_dominance()
+# ------------------------------------------------------------
+# 1) 현재 Dominance 단일 조회
+# ------------------------------------------------------------
+@bp.route("/current", methods=["GET"])
+def dominance_current():
+    value = get_current_dominance()
     return jsonify({
-        "dominance": v if v is not None else "값없음"
+        "dominance": value if value is not None else "값없음"
     })
 
 
-@bp.route("/avg/<int:hours>")
-def dominance_avg(hours):
-    """4h 또는 24h 평균"""
-    v = get_avg(hours)
+# ------------------------------------------------------------
+# 2) 최근 4시간 평균
+# ------------------------------------------------------------
+@bp.route("/avg/4h", methods=["GET"])
+def dominance_avg_4h():
+    avg4 = get_avg(4)
     return jsonify({
-        "avg": v if v is not None else "값없음"
+        "dominance_4h": avg4 if avg4 is not None else "값없음"
     })
 
 
-@bp.route("/packet")
+# ------------------------------------------------------------
+# 3) 최근 24시간 평균
+# ------------------------------------------------------------
+@bp.route("/avg/24h", methods=["GET"])
+def dominance_avg_24h():
+    avg24 = get_avg(24)
+    return jsonify({
+        "dominance_24h": avg24 if avg24 is not None else "값없음"
+    })
+
+
+# ------------------------------------------------------------
+# 4) 30분마다 스냅샷 저장 (스케줄러가 주기적으로 호출)
+# ------------------------------------------------------------
+@bp.route("/snapshot", methods=["GET"])
+def dominance_snapshot():
+    ok = add_snapshot()
+    return jsonify({
+        "saved": ok
+    })
+
+
+# ------------------------------------------------------------
+# 5) Apps Script에서 요구하는 통합 패킷 (핵심)
+#    → GenieCollector v9.0이 호출하는 API
+# ------------------------------------------------------------
+@bp.route("/packet", methods=["GET"])
 def dominance_packet():
-    """
-    Apps Script에서 바로 사용 가능한 모든 도미넌스 패킷
-    {
-      "dominance": 56.23,
-      "dominance_4h": 55.88,
-      "dominance_1d": 54.91
-    }
-    """
-    data = get_dominance_packet()
-    return jsonify(data)
+    cur = get_current_dominance()
+    avg4 = get_avg(4)
+    avg24 = get_avg(24)
+
+    return jsonify({
+        "dom": cur if cur is not None else "값없음",
+        "dom4h": avg4 if avg4 is not None else "값없음",
+        "dom1d": avg24 if avg24 is not None else "값없음",
+        "source": "genie_server",
+        "status": "ok"
+    })
