@@ -8,14 +8,19 @@ import json
 from datetime import datetime, timedelta
 
 def safe_get(url, timeout=10):
-    """HTTP 요청을 안정적으로 수행"""
+    """HTTP 요청을 안정적으로 수행 (User-Agent 추가 버전)"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; GenieSystem/1.0; +https://genie-system)"
+    }
+
     try:
-        res = requests.get(url, timeout=timeout)
+        res = requests.get(url, headers=headers, timeout=timeout)
         if res.status_code == 200:
             return res.json()
         return None
     except Exception:
         return None
+
 
 
 def compute_mvrv_fallback():
