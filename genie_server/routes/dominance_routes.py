@@ -3,6 +3,8 @@
 # ============================================================
 
 from flask import Blueprint, jsonify
+import os
+import json                     # ← 추가됨
 from genie_server.utils.dominance_fetcher import (
     get_current_dominance,
     get_avg,
@@ -57,8 +59,7 @@ def dominance_snapshot():
 
 
 # ------------------------------------------------------------
-# 5) Apps Script에서 요구하는 통합 패킷 (핵심)
-#    → GenieCollector v9.0이 호출하는 API
+# 5) Apps Script에서 호출하는 통합 패킷
 # ------------------------------------------------------------
 @bp.route("/packet", methods=["GET"])
 def dominance_packet():
@@ -75,6 +76,9 @@ def dominance_packet():
     })
 
 
+# ------------------------------------------------------------
+# 6) test_write – dominance_log.json 작성 테스트
+# ------------------------------------------------------------
 @bp.route("/test_write", methods=["GET"])
 def test_write():
     """dominance_log.json이 실제로 생성 가능한지 테스트"""
@@ -83,12 +87,12 @@ def test_write():
         path = "/opt/render/project/src/genie_server/utils/dominance_log.json"
         test_data = {"test": True}
 
-        # 폴더가 없으면 에러
+        # 폴더 존재 여부 확인
         folder = "/opt/render/project/src/genie_server/utils"
         if not os.path.exists(folder):
             return jsonify({"ok": False, "reason": "FOLDER_NOT_FOUND", "path": folder})
 
-        # 쓰기 시도
+        # 파일 작성
         with open(path, "w") as f:
             json.dump(test_data, f)
 
