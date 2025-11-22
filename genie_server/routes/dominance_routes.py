@@ -73,3 +73,25 @@ def dominance_packet():
         "source": "genie_server",
         "status": "ok"
     })
+
+
+@bp.route("/test_write", methods=["GET"])
+def test_write():
+    """dominance_log.json이 실제로 생성 가능한지 테스트"""
+
+    try:
+        path = "/opt/render/project/src/genie_server/utils/dominance_log.json"
+        test_data = {"test": True}
+
+        # 폴더가 없으면 에러
+        folder = "/opt/render/project/src/genie_server/utils"
+        if not os.path.exists(folder):
+            return jsonify({"ok": False, "reason": "FOLDER_NOT_FOUND", "path": folder})
+
+        # 쓰기 시도
+        with open(path, "w") as f:
+            json.dump(test_data, f)
+
+        return jsonify({"ok": True, "path": path})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
