@@ -49,9 +49,9 @@ def compute_mvrv_fallback():
 
         # ---------------------------------------------
         # 3) Realized Cap → 무료 API 없음
-        #    과거 히스토리 기반 근사값 사용
+        #    Glassnode 기준 평균 근사치
         # ---------------------------------------------
-        realized_cap = market_cap * 0.78  # 대략적인 평균 비율(Glassnode 공개 데이터 기반 근사치)
+        realized_cap = market_cap * 0.78  # 평균 비율 근사
 
         if realized_cap <= 0:
             return {"MVRV_Z": "값없음", "method": "fallback", "error": "realcap_fail"}
@@ -62,14 +62,9 @@ def compute_mvrv_fallback():
         mvrv = market_cap / realized_cap
 
         # ---------------------------------------------
-        # 5) Z-score는 과거 데이터 없으므로 근사화
+        # 5) Z-score 근사
         # ---------------------------------------------
         mvrv_z = round((mvrv - 1) * 3.2, 3)
-        # 예:
-        # MVRV=1 → 0
-        # MVRV=1.2 → +0.64
-        # MVRV=1.5 → +1.6
-        # 약한 과열 파악 가능하게 보정됨
 
         return {
             "MVRV_Z": mvrv_z,
@@ -82,3 +77,16 @@ def compute_mvrv_fallback():
 
     except Exception as e:
         return {"MVRV_Z": "값없음", "method": "fallback", "error": str(e)}
+
+
+
+# ============================================================
+# ⭐ 반드시 필요한 함수 — mvrv_routes.py가 이걸 import함
+# ============================================================
+
+def get_mvrv_data():
+    """
+    mvrv_routes.py가 import하는 공식 함수.
+    내부에서 compute_mvrv_fallback() 호출만 래핑.
+    """
+    return compute_mvrv_fallback()
