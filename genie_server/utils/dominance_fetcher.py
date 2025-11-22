@@ -6,6 +6,9 @@ import requests
 # ---------------------------------------------------------
 DOM_LOG_PATH = "/opt/render/project/src/genie_server/utils/dominance_log.json"
 
+# 필요한 경우 폴더 생성
+os.makedirs(os.path.dirname(DOM_LOG_PATH), exist_ok=True)
+
 # API URLs
 COINGECKO_URL = "https://api.coingecko.com/api/v3/global"
 PAPRIKA_URL = "https://api.coinpaprika.com/v1/global"
@@ -84,6 +87,8 @@ def save_log(log):
 def add_snapshot():
     """30분마다 dominance 스냅샷 저장"""
     value = get_current_dominance()
+
+    # 실패 시 저장하지 않음
     if value is None:
         return False
 
@@ -113,7 +118,8 @@ def get_avg(hours):
     need = int((hours * 60) / 30)
     samples = log[-need:]
 
-    vals = [x["dominance"] for x in samples if x.get("dominance")]
+    # ⚠️ x.get("dominance") → 잘못된 조건 (0.0이면 False 취급)
+    vals = [x["dominance"] for x in samples if "dominance" in x]
 
     if not vals:
         return None
@@ -132,8 +138,17 @@ def get_dominance_packet():
     - dominance_1d
     """
 
-    # 1) 실시간
     current = get_current_dominance()
-
-    # 2) snapshot 기반 평균
     avg_4h = get_avg(4)
+    avg_1d = get_avg(24)
+
+    def fmt(v):
+        return "값없음" if v is None else round(v, 2)
+
+    return {
+        "dom": fmt(current),
+        "dom4h": fmt(avg_4h),
+        "dom1d": fmt(avg_1d),
+        "source": "genie_server",
+        "status": "ok"
+    }
