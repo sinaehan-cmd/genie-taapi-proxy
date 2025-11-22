@@ -1,62 +1,40 @@
-# genie_server/utils/dominance_fetcher.py
+from flask import Blueprint, jsonify
+from genie_server.utils.dominance_fetcher import (
+    get_current_dominance,
+    get_avg,
+    get_dominance_packet
+)
 
-import os, json, time
-import requests
+bp = Blueprint("dominance", __name__, url_prefix="/dominance")
 
-DOM_LOG_PATH = "/opt/render/project/src/genie_server/utils/dominance_log.json"
-COINGECKO_URL = "https://api.coingecko.com/api/v3/global"
 
-def get_current_dominance():
-    """현재 BTC dominance 1회 조회"""
-    try:
-        r = requests.get(COINGECKO_URL, timeout=10)
-        data = r.json()
-        return float(data["data"]["market_cap_percentage"]["btc"])
-    except:
-        return None
+@bp.route("/now")
+def dominance_now():
+    """단일 현재 도미넌스 조회"""
+    v = get_current_dominance()
+    return jsonify({
+        "dominance": v if v is not None else "값없음"
+    })
 
-def load_log():
-    if not os.path.exists(DOM_LOG_PATH):
-        return []
-    try:
-        with open(DOM_LOG_PATH, "r") as f:
-            return json.load(f)
-    except:
-        return []
 
-def save_log(log):
-    with open(DOM_LOG_PATH, "w") as f:
-        json.dump(log, f)
+@bp.route("/avg/<int:hours>")
+def dominance_avg(hours):
+    """4h 또는 24h 평균"""
+    v = get_avg(hours)
+    return jsonify({
+        "avg": v if v is not None else "값없음"
+    })
 
-def add_snapshot():
-    """30분마다 dominance 스냅샷 저장"""
-    value = get_current_dominance()
-    if value is None:
-        return False
 
-    log = load_log()
-    log.append({"ts": int(time.time()), "dominance": value})
-
-    # 최근 48개만 유지 (24시간)
-    log = log[-48:]
-
-    save_log(log)
-    return True
-
-def get_avg(hours):
-    """최근 N시간 평균 (hours=4 or 24)"""
-    log = load_log()
-    if not log:
-        return None
-
-    need = int((hours * 60) / 30)   # 4h=8개, 24h=48개
-    samples = log[-need:]
-
-    if not samples:
-        return None
-
-    vals = [x["dominance"] for x in samples if "dominance" in x]
-    if not vals:
-        return None
-
-    return round(sum(vals) / len(vals), 2)
+@bp.route("/packet")
+def dominance_packet():
+    """
+    Apps Script에서 바로 사용 가능한 모든 도미넌스 패킷
+    {
+      "dominance": 56.23,
+      "dominance_4h": 55.88,
+      "dominance_1d": 54.91
+    }
+    """
+    data = get_dominance_packet()
+    return jsonify(data)
