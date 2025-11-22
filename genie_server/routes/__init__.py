@@ -1,5 +1,3 @@
-# genie_server/routes/__init__.py
-
 from . import (
     base_routes,
     view_routes,
@@ -14,7 +12,7 @@ from . import (
     mvrv_routes,
 )
 
-# indicator / dominance는 모듈이 아니라 bp만 직접 가져옴
+# indicator / dominance는 블루프린트만 직접 가져옴
 from .indicator_routes import bp as bp_indicator
 from .dominance_routes import bp as bp_dominance
 
@@ -22,7 +20,7 @@ from .dominance_routes import bp as bp_dominance
 def register_routes(app):
     """모든 Blueprint를 Flask 앱에 등록"""
 
-    # 1) 일반 라우트 모듈들
+    # 1) 일반 라우트 모듈들 — 모듈 안에 bp 존재
     for module in [
         base_routes,
         view_routes,
@@ -36,8 +34,9 @@ def register_routes(app):
         loop_auto_gti,
         mvrv_routes,
     ]:
-        app.register_blueprint(module.bp)
+        if hasattr(module, "bp"):
+            app.register_blueprint(module.bp)
 
-    # 2) 개별 블루프린트 등록 (indicator / dominance)
+    # 2) 개별 Blueprint 등록 — indicator / dominance
     app.register_blueprint(bp_indicator)
     app.register_blueprint(bp_dominance)
