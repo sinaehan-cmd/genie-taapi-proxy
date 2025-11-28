@@ -13,18 +13,13 @@ def write_data():
         if data.get("access_key") != GENIE_ACCESS_KEY:
             return jsonify({"error": "Invalid access key"}), 403
 
-        sheet_name = data.get("sheet_name")
-        values = data.get("values", [])
+        sheet_name = data["sheet_name"]
+        values = data["values"]
 
         write_row(sheet_name, values)
 
-        print(f"✅ GoogleSheet WRITE → {sheet_name}: {values}")
-
-        return jsonify({
-            "result": "success",
-            "sheet": sheet_name,
-            "values": values
-        })
+        print(f"🟢 WRITE → {sheet_name}: {values}")
+        return jsonify({"result": "success"})
 
     except Exception as e:
         print("❌ write 오류:", e)
