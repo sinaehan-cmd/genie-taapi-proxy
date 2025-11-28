@@ -3,7 +3,7 @@ import datetime, os, psutil
 
 bp = Blueprint("loop_system", __name__)
 
-@bp.route("/system_log")
+@bp.route("/system_log",methods=["GET", "POST"])
 def system_log():
     """
     시스템 상태 로그 루프 – CPU, 메모리, Uptime 등 기록
@@ -24,3 +24,4 @@ def system_log():
     except Exception as e:
         print("❌ System Log Error:", e)
         return jsonify({"error": str(e)}), 500
+
