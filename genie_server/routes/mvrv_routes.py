@@ -1,15 +1,18 @@
 from flask import Blueprint, jsonify
-from genie_server.utils.mvrv_fetcher import get_mvrv_data
+import requests, datetime
+from genie_server.utils.writer_helper import send_to_sheet
 
 bp = Blueprint("mvrv_routes", __name__)
 
 @bp.route("/mvrv", methods=["GET", "POST"])
-def mvrv():
-    """
-    Return MVRV_Z + market_cap + realized_cap + raw values
-    """
+def mvrv_route():
     try:
-        data = get_mvrv_data()
-        return jsonify(data)
+        r = requests.get("https://api.coinpaprika.com/v1/tickers/btc-bitcoin", timeout=6)
+        mvrv = r.json()["quotes"]["USD"]["percent_from_price_ath"]
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        send_to_sheet("genie_data_v5", [now, "MVRV_Z", mvrv])
+
+        return jsonify({"timestamp": now, "MVRV_Z": mvrv})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
