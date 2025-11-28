@@ -1,5 +1,5 @@
 # ======================================================
-# 🌐 view_routes.py – Genie Render Server HTML + JSON (v2025.11.13-Final + nocache)
+# 🌐 view_routes.py – Genie Render Server HTML + JSON (v2025.11.28-Fixed)
 # ======================================================
 from flask import Blueprint, Response, request, redirect
 from urllib.parse import unquote
@@ -12,28 +12,38 @@ import json, time
 bp = Blueprint("view_routes", __name__)
 
 # ------------------------------------------------------
-# 🚫 캐시 방지용 nocache 파라미터 자동 추가
+# 🚫 캐시 방지용 nocache 파라미터 자동 추가 (GET 전용)
 # ------------------------------------------------------
 @bp.before_app_request
 def append_nocache_param():
-    # 정적 파일이나 favicon은 제외
+    """
+    ❗ GET 요청만 nocache를 추가한다.
+    ❗ POST/PUT/PATCH/DELETE 같은 write 요청은 절대 리다이렉트하지 않는다.
+    """
+    if request.method != "GET":
+        return None
+
+    # 정적 파일, favicon 등 제외
     if request.path.startswith("/static") or "favicon" in request.path:
         return None
 
-    # 이미 nocache 파라미터가 붙어있으면 그대로 진행
+    # 이미 nocache가 포함되어 있으면 그대로 사용
     if "nocache" in request.args:
         return None
 
-    # 새 nocache 값 추가 후 리다이렉트
+    # nocache 파라미터 새로 붙여서 GET 전용 리다이렉트
     timestamp = int(time.time())
     new_url = f"{request.path}?nocache={timestamp}"
+
     if request.query_string:
-        new_url = f"{request.path}?{request.query_string.decode()}&nocache={timestamp}"
+        qs = request.query_string.decode()
+        new_url = f"{request.path}?{qs}&nocache={timestamp}"
 
     return redirect(new_url)
 
+
 # ------------------------------------------------------
-# 📘 HTML 보기용
+# 📘 HTML 보기
 # ------------------------------------------------------
 @bp.route("/view-html/<path:sheet_name>")
 def view_html(sheet_name):
@@ -74,7 +84,7 @@ def view_html(sheet_name):
 
 
 # ------------------------------------------------------
-# 🧩 HTML에 JSON 포장 (GPT 접근용)
+# 🧩 HTML에 JSON 데이터 표시 (GPT-friendly)
 # ------------------------------------------------------
 @bp.route("/view-html-json/<path:sheet_name>")
 def view_html_json(sheet_name):
@@ -116,12 +126,11 @@ def view_html_json(sheet_name):
         return resp
 
     except Exception as e:
-        err_html = f"<h3>오류 발생: {e}</h3>"
-        return Response(err_html, mimetype="text/html", status=500)
+        return Response(f"<h3>오류 발생: {e}</h3>", mimetype="text/html", status=500)
 
 
 # ------------------------------------------------------
-# 🧩 JSON API (대용량 대응 + 최근 168개만 제공)
+# 🧩 순수 JSON API (가장 안전)
 # ------------------------------------------------------
 @bp.route("/view-json/<path:sheet_name>")
 def view_json(sheet_name):
@@ -132,25 +141,17 @@ def view_json(sheet_name):
             spreadsheetId=SHEET_ID, range=decoded
         ).execute()
         values = result.get("values", [])
+
         if not values:
             return Response(json.dumps({"error": "No data found"}), mimetype="application/json")
 
-        # ------------------------------
-        # 1) 헤더 / rows 생성
-        # ------------------------------
         headers = values[0]
         rows = [dict(zip_longest(headers, row, fillvalue="")) for row in values[1:]]
 
-        # ------------------------------
-        # 2) 최근 n개만 자르기 (기본 168개)
-        # ------------------------------
         LIMIT = 168
         if len(rows) > LIMIT:
-            rows = rows[-LIMIT:]   # 최신 168개만 남기기
+            rows = rows[-LIMIT:]
 
-        # ------------------------------
-        # 3) payload 구성
-        # ------------------------------
         payload = {
             "sheet": decoded,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -159,18 +160,15 @@ def view_json(sheet_name):
             "data": rows,
         }
 
-        json_str = json.dumps(payload, ensure_ascii=False)
-        resp = Response(json_str, mimetype="application/json")
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Cache-Control"] = "no-store"
-        return resp
+        return Response(json.dumps(payload, ensure_ascii=False), mimetype="application/json")
 
     except Exception as e:
         err = {"error": str(e)}
         return Response(json.dumps(err, ensure_ascii=False), mimetype="application/json", status=500)
 
+
 # ------------------------------------------------------
-# 🔒 모든 응답 캐시 비활성화 헤더 추가
+# 🔒 모든 응답 캐시 비활성화
 # ------------------------------------------------------
 @bp.after_app_request
 def add_no_cache_headers(response):
@@ -178,6 +176,3 @@ def add_no_cache_headers(response):
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
-
-
-
