@@ -1,43 +1,54 @@
-from flask import Blueprint, jsonify
-import requests, time
-from genie_server.utils.helpers import generate_briefing_id
-from genie_server.config import SHEET_ID, GENIE_ACCESS_KEY
+# -*- coding: utf-8 -*-
+# ======================================================
+# 🤖 Genie Auto Loop — FIXED (No localhost, full remote calls)
+# ======================================================
 
-bp = Blueprint("loop_auto", __name__)
+import requests, os, datetime, time
+from flask import Blueprint, jsonify
+
+bp = Blueprint("auto_loop", __name__)
+
+GENIE_ACCESS_KEY = os.getenv("GENIE_ACCESS_KEY")
+RENDER_BASE_URL = os.getenv("RENDER_BASE_URL", "https://genie-taapi-proxy-1.onrender.com")
+
+
+def safe_post(endpoint: str):
+    """Render 서버로 POST 전송 (내부 localhost 호출 제거 버전)"""
+    url = f"{RENDER_BASE_URL}/{endpoint}"
+    try:
+        res = requests.post(url, json={"access_key": GENIE_ACCESS_KEY}, timeout=20)
+        if res.status_code == 200:
+            return True, res.json()
+        return False, {"status": res.status_code, "text": res.text}
+    except Exception as e:
+        return False, {"error": str(e)}
+
 
 @bp.route("/auto_loop", methods=["GET", "POST"])
 def auto_loop():
-    """
-    지니 자동 브리핑 루프 (8시간마다 작동하는 브리핑 생성)
-    """
-    try:
-        start = time.time()
-        print("🌀 [AutoLoop] 실행 시작")
+    """📌 auto_loop 전체 루프를 안전하게 Render 엔드포인트로 호출하도록 정리한 공식 버전"""
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n🔥 [auto_loop] 시작: {now}")
 
-        # (예시) 내부 루프 실행 순서
-        for endpoint in [
-            "/prediction_loop",
-            "/gti_loop",
-            "/learning_loop",
-            "/system_log",
+    sequence = [
+        "prediction_loop",
+        "gti_loop",
+        "learning_loop",
+        "auto_gti_loop",
+        "dominance/snapshot",
+        "mvrv",
+        "reader_loop"
+    ]
 
-            # ⭐ 여기 추가: MVRV_Z 자동 수집 루프
-            "/mvrv_loop",
-        ]:
-            print(f"📡 호출: {endpoint}")
-            r = requests.get(f"http://localhost:8080{endpoint}")
-            print(f"↳ 응답: {r.status_code}")
+    results = {}
 
-        duration = round(time.time() - start, 2)
-        return jsonify({
-            "status": "✅ Auto Loop completed",
-            "duration_sec": duration,
-            "briefing_id": generate_briefing_id()
-        })
-    except Exception as e:
-        print("❌ AutoLoop Error:", e)
-        return jsonify({"error": str(e)}), 500
+    for endpoint in sequence:
+        ok, res = safe_post(endpoint)
+        results[endpoint] = res
+        time.sleep(2)   # 안정화용
 
-
-
-
+    print("🔚 auto_loop 완료")
+    return jsonify({
+        "timestamp": now,
+        "results": results
+    })
