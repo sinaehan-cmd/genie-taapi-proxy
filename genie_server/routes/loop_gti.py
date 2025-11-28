@@ -3,7 +3,7 @@ import datetime, random
 
 bp = Blueprint("loop_gti", __name__)
 
-@bp.route("/gti_loop" methods=["GET", "POST"])
+@bp.route("/gti_loop", methods=["GET", "POST"])
 def gti_loop():
     """
     GTI 계산 루프 – Genie Trust Index 산출
@@ -22,4 +22,5 @@ def gti_loop():
     except Exception as e:
         print("❌ GTI Loop Error:", e)
         return jsonify({"error": str(e)}), 500
+
 
