@@ -3,7 +3,7 @@ import requests, datetime
 
 bp = Blueprint("loop_final", __name__)
 
-@bp.route("/final_briefing" methods=["GET", "POST"])
+@bp.route("/final_briefing", methods=["GET", "POST"])
 def final_briefing():
     """
     모든 루프 결과를 모아서 최종 브리핑 생성
@@ -29,4 +29,5 @@ def final_briefing():
     except Exception as e:
         print("❌ FinalBriefing Error:", e)
         return jsonify({"error": str(e)}), 500
+
 
