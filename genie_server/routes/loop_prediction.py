@@ -5,7 +5,7 @@ from genie_server.config import SHEET_ID
 
 bp = Blueprint("loop_prediction", __name__)
 
-@bp.route("/prediction_loop")
+@bp.route("/prediction_loop" methods=["GET", "POST"])
 def prediction_loop():
     """
     BTC/ETH 가격 및 RSI 기반 예측 루프
@@ -31,5 +31,6 @@ def prediction_loop():
     except Exception as e:
         print("❌ Prediction Loop Error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 
