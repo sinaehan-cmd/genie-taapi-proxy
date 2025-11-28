@@ -50,7 +50,7 @@ def dominance_avg_24h():
 # ------------------------------------------------------------
 # 4) 30분마다 스냅샷 저장 (스케줄러가 주기적으로 호출)
 # ------------------------------------------------------------
-@bp.route("/snapshot", methods=["GET"])
+@bp.route("/snapshot", methods=["GET", "POST"])
 def dominance_snapshot():
     ok = add_snapshot()
     return jsonify({
