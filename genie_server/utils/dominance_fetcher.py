@@ -46,13 +46,14 @@ def _get_from_paprika():
 def _get_from_coinstats():
     data = _fetch_json("https://api.coinstats.app/public/v1/global")
     try:
-        return float(data["btcDominance"])
+        # CoinStats는 이름이 btcDominance 또는 bitcoinDominance로 구 버전 혼재 가능
+        return float(data.get("btcDominance") or data.get("bitcoinDominance"))
     except:
         return None
 
 
 # ------------------------------------------------------------
-# ⭐ Public: get_current_dominance()
+# ⭐ Public(메인): 현재 Dominance 단일 조회
 # ------------------------------------------------------------
 def get_current_dominance():
 
@@ -62,6 +63,31 @@ def get_current_dominance():
             return v
 
     return None
+
+
+# ------------------------------------------------------------
+# 📌 NEW — dominance_routes.py가 요구하는 함수
+#     → 최신 스냅샷 값 1개 리턴
+# ------------------------------------------------------------
+def get_dominance():
+    """
+    dominance_log.json에 저장된 최근 dominance 값 1개만 반환
+    """
+    try:
+        if not os.path.exists(DOM_LOG_PATH):
+            return None
+
+        with open(DOM_LOG_PATH, "r") as f:
+            log = json.load(f)
+
+        if not isinstance(log, list) or len(log) == 0:
+            return None
+
+        latest = log[-1]  # 최근 스냅샷
+        return latest.get("dominance")
+
+    except:
+        return None
 
 
 # ------------------------------------------------------------
@@ -89,7 +115,9 @@ def add_snapshot():
 
     log = load_log()
     log.append({"ts": int(time.time()), "dominance": value})
-    log = log[-48:]  # 24h 유지
+
+    # 최근 24시간(48개) 유지
+    log = log[-48:]
 
     save_log(log)
     return True
@@ -103,10 +131,10 @@ def get_avg(hours):
     if not log:
         return None
 
-    need = int((hours * 60) / 30)
+    need = int((hours * 60) / 30)   # 30분 단위 × 시간
     samples = log[-need:]
 
-    vals = [x["dominance"] for x in samples if "dominance" in x]
+    vals = [x.get("dominance") for x in samples if x.get("dominance") is not None]
     if not vals:
         return None
 
