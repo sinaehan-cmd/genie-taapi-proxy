@@ -3,7 +3,7 @@ import time, random
 
 bp = Blueprint("loop_auto_gti", __name__)
 
-@bp.route("/auto_gti_loop" methods=["GET", "POST"])
+@bp.route("/auto_gti_loop", methods=["GET", "POST"])
 def auto_gti_loop():
     """
     GTI 자동 측정 루프 – 일정 주기마다 신뢰도 갱신
@@ -20,4 +20,5 @@ def auto_gti_loop():
     except Exception as e:
         print("❌ Auto GTI Loop Error:", e)
         return jsonify({"error": str(e)}), 500
+
 
