@@ -3,7 +3,7 @@ import datetime
 
 bp = Blueprint("loop_learning", __name__)
 
-@bp.route("/learning_loop")
+@bp.route("/learning_loop" methods=["GET", "POST"])
 def learning_loop():
     """
     지니 자기학습 루프 – GTI 결과 기반 보정
@@ -24,3 +24,4 @@ def learning_loop():
     except Exception as e:
         print("❌ Learning Loop Error:", e)
         return jsonify({"error": str(e)}), 500
+
