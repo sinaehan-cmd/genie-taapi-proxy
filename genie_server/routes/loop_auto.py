@@ -36,8 +36,7 @@ def auto_loop():
         "learning_loop",
         "auto_gti_loop",
         "dominance/snapshot",
-        "mvrv",
-        "reader_loop"
+        "mvrv"
     ]
 
     results = {}
@@ -52,3 +51,4 @@ def auto_loop():
         "timestamp": now,
         "results": results
     })
+
