@@ -46,7 +46,6 @@ def _get_from_paprika():
 def _get_from_coinstats():
     data = _fetch_json("https://api.coinstats.app/public/v1/global")
     try:
-        # CoinStats는 이름이 btcDominance 또는 bitcoinDominance로 구 버전 혼재 가능
         return float(data.get("btcDominance") or data.get("bitcoinDominance"))
     except:
         return None
