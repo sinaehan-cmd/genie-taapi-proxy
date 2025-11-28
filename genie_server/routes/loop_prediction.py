@@ -1,66 +1,107 @@
+# -*- coding: utf-8 -*-
+# ======================================================
+# 🔮 Genie Prediction Loop (Ultra Stable v3.0)
+# — 절대 죽지 않는 가격 예측 루프
+# ======================================================
+
 from flask import Blueprint, jsonify
 import requests, datetime
 
 bp = Blueprint("prediction_loop", __name__)
 
-# 가격 가져오기 — 응답 구조 변화 대비 다중 fallback
-def get_price_safe(data, *keys):
-    for k in keys:
-        if k in data:
-            return float(data[k])
+# ------------------------------------------------------
+# 안전한 fetch
+# ------------------------------------------------------
+def safe_get(url):
+    try:
+        r = requests.get(url, timeout=6)
+        if r.status_code == 200:
+            return r.json()
+    except:
+        return None
     return None
+
 
 @bp.route("/prediction_loop", methods=["GET", "POST"])
 def prediction_loop():
     """
-    가격 기반 간단 예측 루프 — 구조 변경에도 절대 죽지 않는 버전
+    🔮 가격 기반 예측 — 구조 변경/timeout 시 절대 죽지 않는 버전
     """
     try:
-        print(f"🔮 [PredictionLoop] 시작: {datetime.datetime.now()}")
-
-        # 가격 데이터 가져오기 (여러 출처 fallback)
-        sources = [
-            "https://api.coindesk.com/v1/bpi/currentprice.json",
-            "https://api.coinbase.com/v2/prices/BTC-USD/spot",
-            "https://api.coinpaprika.com/v1/tickers/btc-bitcoin"
-        ]
+        now = datetime.datetime.now()
+        print(f"🔮 [PredictionLoop] 시작: {now}")
 
         price = None
-        for url in sources:
+
+        # ======================================================
+        # 1) Coindesk v1 (가장 안정적)
+        # ======================================================
+        cd = safe_get("https://api.coindesk.com/v1/bpi/currentprice.json")
+        if cd and "bpi" in cd:
             try:
-                r = requests.get(url, timeout=6).json()
-
-                # Coindesk 구조
-                if "bpi" in r:
-                    price = float(r["bpi"]["USD"]["rate_float"])
-                    break
-
-                # Coinbase 구조
-                if "data" in r and "amount" in r["data"]:
-                    price = float(r["data"]["amount"])
-                    break
-
-                # Paprika 구조
-                if "quotes" in r and "USD" in r["quotes"]:
-                    price = float(r["quotes"]["USD"]["price"])
-                    break
-
-            except Exception:
+                price = float(cd["bpi"]["USD"]["rate_float"])
+            except:
                 pass
 
+        # ======================================================
+        # 2) Coinbase fallback
+        # ======================================================
         if price is None:
-            # 안전장치
-            price = 0
+            cb = safe_get("https://api.coinbase.com/v2/prices/BTC-USD/spot")
+            try:
+                if cb and "data" in cb and "amount" in cb["data"]:
+                    price = float(cb["data"]["amount"])
+            except:
+                pass
 
-        # 간단한 예측 로직
+        # ======================================================
+        # 3) Paprika fallback (구조 변경 대비)
+        # ======================================================
+        if price is None:
+            pk = safe_get("https://api.coinpaprika.com/v1/tickers/btc-bitcoin")
+            try:
+                if pk and "quotes" in pk and "USD" in pk["quotes"]:
+                    price = float(pk["quotes"]["USD"]["price"])
+            except:
+                pass
+
+        # ======================================================
+        # 4) CoinGecko simple price (최후의 안전장치)
+        # ======================================================
+        if price is None:
+            cg = safe_get(
+                "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+            )
+            try:
+                price = float(cg["bitcoin"]["usd"])
+            except:
+                pass
+
+        # ======================================================
+        # 5) 모든 API 실패 → price가 None이면 1 넣기 (auto_loop 보호)
+        # ======================================================
+        if price is None:
+            print("⚠️ BTC 가격 fetch 실패 → 예측 가격을 1로 설정하여 루프 보호")
+            price = 1
+
+        # ------------------------------------------------------
+        # 예측 로직 (임시)
+        # ------------------------------------------------------
         prediction = "상승" if price > 50000 else "관망"
 
         return jsonify({
-            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
             "BTC": price,
             "prediction": prediction
         })
 
     except Exception as e:
         print("❌ Prediction Loop Error:", e)
-        return jsonify({"error": str(e)}), 500
+
+        # 절대 500으로 죽지 않도록 fallback 응답
+        return jsonify({
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "BTC": 1,
+            "prediction": "관망",
+            "error": str(e)
+        }), 200
