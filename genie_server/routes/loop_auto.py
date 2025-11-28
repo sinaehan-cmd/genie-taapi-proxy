@@ -5,7 +5,7 @@ from genie_server.config import SHEET_ID, GENIE_ACCESS_KEY
 
 bp = Blueprint("loop_auto", __name__)
 
-@bp.route("/auto_loop" methods=["GET", "POST"])
+@bp.route("/auto_loop", methods=["GET", "POST"])
 def auto_loop():
     """
     지니 자동 브리핑 루프 (8시간마다 작동하는 브리핑 생성)
@@ -37,6 +37,7 @@ def auto_loop():
     except Exception as e:
         print("❌ AutoLoop Error:", e)
         return jsonify({"error": str(e)}), 500
+
 
 
 
