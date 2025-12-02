@@ -58,3 +58,27 @@ def dominance_snapshot():
             "btc_dominance": None,
             "total_market_cap_usd": None,
         }
+
+# -----------------------------
+# MVRV Z-Score Fetcher (Basic)
+# -----------------------------
+def mvrv_run():
+    """
+    Coinglass or CryptoQuant API가 없기 때문에
+    일단은 구조만 반환하는 더미 함수.
+    나중에 실제 API 연결하면 여기에 붙이면 됨.
+    """
+    try:
+        # 임시 값 (None 대신 기본값 0.0 반환)
+        return {
+            "btc_mvrv": 0.0,
+            "eth_mvrv": 0.0,
+            "note": "MVRV placeholder — API not connected yet"
+        }
+    except Exception as e:
+        print("❌ MVRV fetch error:", e)
+        return {
+            "btc_mvrv": None,
+            "eth_mvrv": None
+        }
+
