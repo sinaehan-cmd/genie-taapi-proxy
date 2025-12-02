@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 # ======================================================
-# 🤖 Genie Autonomous Feedback Layer v3.3
-#   — Dominance + MVRV 루프 포함 안정 버전
+# 🤖 Genie Autonomous Feedback Layer v4.0
+#   — New Module Structure Compatible Version
 # ======================================================
 
-import threading, time, requests, os
+import time, requests, os
 from datetime import datetime, timedelta
 
 # ─────────────────────────────────────────────
@@ -12,131 +12,116 @@ from datetime import datetime, timedelta
 # ─────────────────────────────────────────────
 GENIE_ACCESS_KEY = os.getenv("GENIE_ACCESS_KEY")
 RENDER_BASE_URL = os.getenv("RENDER_BASE_URL", "https://genie-taapi-proxy-1.onrender.com")
-LOOP_INTERVAL = int(os.getenv("GENIE_LOOP_INTERVAL", 3600))  # 1시간
+LOOP_INTERVAL = int(os.getenv("GENIE_LOOP_INTERVAL", 3600))  # 기본 1시간
 
 LAST_SUCCESS = datetime.now()
 
 
 # ─────────────────────────────────────────────
-# 🔗 엔드포인트 안전 호출 함수
+# 🔗 엔드포인트 안전 POST 호출
 # ─────────────────────────────────────────────
 def call_genie(endpoint: str):
+    url = f"{RENDER_BASE_URL}/{endpoint}"
     try:
-        url = f"{RENDER_BASE_URL}/{endpoint}"
-        res = requests.post(url, json={"access_key": GENIE_ACCESS_KEY}, timeout=30)
+        res = requests.post(url, json={"access_key": GENIE_ACCESS_KEY}, timeout=20)
+
         if res.status_code == 200:
-            print(f"✅ {endpoint} 성공:", res.json())
+            print(f"✅ {endpoint} OK:", res.text[:80])
         else:
-            print(f"⚠️ {endpoint} 실패: {res.status_code} / {res.text}")
+            print(f"⚠️ {endpoint} 실패 → {res.status_code}: {res.text}")
+
     except Exception as e:
         print(f"❌ {endpoint} 호출 오류:", e)
 
 
 # ─────────────────────────────────────────────
-# 🔁 자율 피드백 루프
+# 🔁 메인 피드백 루프
 # ─────────────────────────────────────────────
 def auto_feedback_loop():
     global LAST_SUCCESS
 
     while True:
-        os.system("clear" if os.name == "posix" else "cls")
         start_time = datetime.now()
-        print("\n🕒 [Auto Feedback] 루프 시작:", start_time.strftime("%Y-%m-%d %H:%M:%S"))
+        start_label = start_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        print(f"\n🕒 [Auto Feedback Loop] 시작: {start_label}")
 
         try:
-            # =====================================================================
-            # 🔥 1) 시장 브리핑 루프
-            # =====================================================================
-            call_genie("auto_loop")
-            time.sleep(4)
+            # ------------------------------------------------------
+            # 1) Market Auto Loop
+            # ------------------------------------------------------
+            call_genie("loop/auto")
+            time.sleep(2)
 
-            # =====================================================================
-            # 🔥 2) 예측 루프
-            # =====================================================================
-            call_genie("prediction_loop")
-            time.sleep(4)
+            # ------------------------------------------------------
+            # 2) Prediction Loop
+            # ------------------------------------------------------
+            call_genie("loop/prediction")
+            time.sleep(2)
 
-            # =====================================================================
-            # 🔥 3) GTI 루프
-            # =====================================================================
-            call_genie("gti_loop")
-            time.sleep(4)
+            # ------------------------------------------------------
+            # 3) GTI Loop
+            # ------------------------------------------------------
+            call_genie("loop/gti")
+            time.sleep(2)
 
-            # =====================================================================
-            # 🔥 4) Learning Loop
-            # =====================================================================
-            call_genie("learning_loop")
-            time.sleep(4)
+            # ------------------------------------------------------
+            # 4) Learning Loop
+            # ------------------------------------------------------
+            call_genie("loop/learning")
+            time.sleep(2)
 
-            # =====================================================================
-            # 🔥 5) Auto GTI Loop
-            # =====================================================================
-            call_genie("auto_gti_loop")
-            time.sleep(4)
+            # ------------------------------------------------------
+            # 5) Auto GTI Loop
+            # ------------------------------------------------------
+            call_genie("loop/auto_gti")
+            time.sleep(2)
 
-            # =====================================================================
-            # ⭐ NEW — Dominance Snapshot 저장
-            # =====================================================================
-            call_genie("dominance/snapshot")   # 로그 저장
-            time.sleep(3)
+            # ------------------------------------------------------
+            # 6) Dominance Snapshot
+            # ------------------------------------------------------
+            call_genie("dominance/snapshot")
+            time.sleep(2)
 
-            # =====================================================================
-            # ⭐ NEW — MVRV 계산 루프
-            # =====================================================================
-            call_genie("mvrv")                  # fallback Z-score 계산
-            time.sleep(3)
+            # ------------------------------------------------------
+            # 7) MVRV Loop
+            # ------------------------------------------------------
+            call_genie("mvrv/run")
+            time.sleep(2)
 
-            # =====================================================================
-            # 🔥 6) Reader Loop
-            # =====================================================================
-            call_genie("reader_loop")
-            time.sleep(3)
+            # ------------------------------------------------------
+            # 8) Reader Loop
+            # ------------------------------------------------------
+            call_genie("reader/run")
+            time.sleep(2)
 
-            # =====================================================================
-            # 🔥 7) 시스템 로그 기록
-            # =====================================================================
+            # ------------------------------------------------------
+            # 9) 시스템 로그 기록
+            # ------------------------------------------------------
             runtime = (datetime.now() - start_time).seconds
             uptime = 100 if (datetime.now() - LAST_SUCCESS) < timedelta(hours=2) else 95
-            next_slot = (datetime.now() + timedelta(seconds=LOOP_INTERVAL)).strftime("%Y-%m-%d %H:%M:%S")
 
-            requests.post(
-                f"{RENDER_BASE_URL}/system_log",
-                json={
-                    "access_key": GENIE_ACCESS_KEY,
-                    "module": "AUTONOMOUS_LOOP",
-                    "status": "OK",
-                    "runtime": str(runtime),
-                    "trust_ok": "TRUE",
-                    "reason": "Loop Completed",
-                    "ref_id": f"AUTO.{start_time.strftime('%Y%m%d%H%M%S')}",
-                    "uptime": str(uptime)
-                },
-                timeout=15,
-            )
+            call_genie(f"system/log")
 
             LAST_SUCCESS = datetime.now()
-            print(f"✅ 루프 완료 | Runtime: {runtime}s | Next: {next_slot}")
+
+            print(f"✅ 루프 완료 | Runtime: {runtime}s")
 
         except Exception as e:
             print("❌ 루프 내부 오류:", e)
 
-        print(f"💤 {LOOP_INTERVAL/60:.1f}분 대기 중 ...")
+        # ------------------------------------------------------
+        # 다음 루프까지 대기
+        # ------------------------------------------------------
+        next_time = datetime.now() + timedelta(seconds=LOOP_INTERVAL)
+        print(f"💤 대기: {LOOP_INTERVAL/60:.1f}분 | Next: {next_time.strftime('%H:%M:%S')}\n")
+
         time.sleep(LOOP_INTERVAL)
 
 
 # ─────────────────────────────────────────────
-# 🚀 실행 (Auto-Recovery 내장)
+# 🚀 실행
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🚀 Genie Autonomous Feedback Layer v3.3 시작")
-
-    while True:
-        try:
-            thread = threading.Thread(target=auto_feedback_loop, daemon=True)
-            thread.start()
-            thread.join()
-        except Exception as e:
-            print("💥 메인 루프 예외 발생:", e)
-        finally:
-            print("🔄 30초 후 재시작 시도 중 ...")
-            time.sleep(30)
+    print("🚀 Genie Autonomous Feedback v4.0 실행 시작")
+    auto_feedback_loop()
