@@ -1,44 +1,38 @@
-import statistics
-from services.google_sheet import read_last_rows
+import requests
+import os
 
+SHEET_JSON_URL = "https://genie-taapi-proxy-1.onrender.com/view-json/genie_data_v5"
 
-def parse_float(value):
-    """문자열 또는 None을 안전하게 float로 변환"""
+def fetch_recent_dominance_values(limit=24):
+    """Google Sheet JSON에서 최근 dominance(1h) 데이터 24개 불러오기"""
     try:
-        return float(value)
-    except:
+        r = requests.get(SHEET_JSON_URL, timeout=5).json()
+
+        dominance_values = []
+        for row in r.get("data", []):
+            dom = row.get("Dominance(%)")
+            if dom and isinstance(dom, (int, float)):
+                dominance_values.append(dom)
+
+        # 최신 값부터 정렬
+        dominance_values = dominance_values[-limit:]
+
+        return dominance_values
+
+    except Exception as e:
+        print("❌ Dominance fetch error:", e)
+        return []
+
+
+def calc_dominance_4h():
+    values = fetch_recent_dominance_values(4)
+    if len(values) < 4:
         return None
+    return sum(values) / len(values)
 
 
-def get_recent_dominance_values(hours):
-    """
-    최근 N시간의 dominance 값을 genie_data_v5 에서 읽어온다.
-    hours = 4 → 4개의 1h 데이터
-    hours = 24 → 24개의 1h 데이터
-    """
-    rows = read_last_rows("genie_data_v5", hours)
-
-    values = []
-    for row in rows:
-        dom = parse_float(row.get("Dominance(%)"))
-        if dom is not None:
-            values.append(dom)
-
-    return values
-
-
-def get_dominance_avg(hours):
-    """
-    Dominance(4h), Dominance(1d)를 계산하는 메인 함수
-    최근 N개의 데이터를 평균낸다.
-    """
-    values = get_recent_dominance_values(hours)
-
-    if len(values) == 0:
+def calc_dominance_1d():
+    values = fetch_recent_dominance_values(24)
+    if len(values) < 24:
         return None
-
-    # 평균 계산
-    avg_value = statistics.mean(values)
-
-    # 지니 계산식 기준: 소수점 6자리 유지
-    return round(avg_value, 6)
+    return sum(values) / len(values)
