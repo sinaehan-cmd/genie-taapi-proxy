@@ -1,36 +1,12 @@
-# services/mvrv_service.py
-# -----------------------------------------------------
-# Genie Internal MVRV-Z Calculator
-# 실현가·표준편차 고정하여 안정적인 근사 MVRV-Z 생성
-# -----------------------------------------------------
+from flask import Blueprint, jsonify
+from services.mvrv_service import get_mvrv_data
 
-import math
+bp = Blueprint("mvrv", __name__)
 
-# 지니가 자동 선택한 기준값
-BTC_SUPPLY = 19_700_000             # 유통량 (대략 고정)
-REALIZED_PRICE = 30_000             # ✅ 지니가 자동 결정한 실현가
-STD = 1_000_000_000_000             # 표준편차 고정 (1조)
-
-def calculate_mvrv_z(price):
+@bp.route("/mvrv", methods=["GET"])
+def mvrv_endpoint():
     """
-    MVRV-Z 근사 계산
-    price: BTC 현재 가격(float)
+    MVRV_Z 계산 API
     """
-    try:
-        if price is None:
-            return None
-
-        # MarketCap
-        market_cap = price * BTC_SUPPLY
-
-        # Realized Cap (고정값)
-        realized_cap = REALIZED_PRICE * BTC_SUPPLY
-
-        # Z-score
-        z = (market_cap - realized_cap) / STD
-
-        # 값 포맷
-        return round(z, 4)
-
-    except Exception:
-        return None
+    data = get_mvrv_data()
+    return jsonify(data)
