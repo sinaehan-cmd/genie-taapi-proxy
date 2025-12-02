@@ -1,12 +1,9 @@
 from flask import Blueprint, jsonify
-from services.market_service import mvrv_run   # ★ 반드시 여기로!
+from services.mvrv_service import calculate_mvrv_z
 
-bp = Blueprint("mvrv", __name__, url_prefix="/mvrv")
+bp = Blueprint("mvrv", __name__)
 
-@bp.route("/run", methods=["GET"])
-def run_mvrv():
-    """
-    단순 MVRV 값 반환
-    """
-    result = mvrv_run()
-    return jsonify(result)
+@bp.route("/mvrv_z")
+def mvrv_z_api():
+    value, msg = calculate_mvrv_z()
+    return jsonify({"mvrv_z": value, "source": msg})
