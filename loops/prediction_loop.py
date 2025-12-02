@@ -1,6 +1,5 @@
 
 from services.google_sheets import read_sheet, append_row
-from services.taapi_service import taapi_rsi
 from services.market_service import get_usd_krw, get_fng_index
 import datetime
 
