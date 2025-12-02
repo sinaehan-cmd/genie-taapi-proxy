@@ -1,11 +1,13 @@
-# routes/dominance_routes.py
-
-from flask import Blueprint
-from .dominance_core import dominance_snapshot   # 최신 Dominance 함수
+from flask import Blueprint, jsonify
+from services.market_service import dominance_snapshot
 
 bp = Blueprint("dominance_routes", __name__)
 
-# Apps Script 구버전 호환
-@bp.route("/dominance/packet", methods=["GET", "POST"])
-def dominance_redirect():
-    return dominance_snapshot()
+@bp.route("/dominance/snapshot")
+def dom_snap():
+    return jsonify(dominance_snapshot())
+
+# Apps Script v9.1 호환
+@bp.route("/dominance/packet")
+def dom_packet():
+    return jsonify(dominance_snapshot())
