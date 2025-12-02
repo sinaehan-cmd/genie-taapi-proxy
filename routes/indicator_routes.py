@@ -1,25 +1,31 @@
 from flask import Blueprint, request, jsonify
 from services.taapi_service import fetch_indicator
 
-bp = Blueprint("indicator", __name__, url_prefix="/indicator")
+bp = Blueprint("indicator", __name__)
 
-@bp.route("", methods=["GET"])
+
+@bp.route("/indicator", methods=["GET"])
 def get_indicator():
+    """
+    모든 지표 호출 통합 엔드포인트
+    예시:
+    /indicator?indicator=rsi&symbol=BTC/USDT&interval=1h&period=14
+    """
     try:
         indicator = request.args.get("indicator")
         symbol = request.args.get("symbol", "BTC/USDT")
         interval = request.args.get("interval", "1h")
+        period = request.args.get("period", None)
 
-        if not indicator:
-            return jsonify({"error": "indicator is required"}), 400
+        value = fetch_indicator(indicator, symbol, interval, period)
 
-        # period 제거!
-        data = fetch_indicator(indicator, symbol, interval)
-
-        print("🔥 DEBUG /indicator result:", data)
-
-        return jsonify(data)
+        return jsonify({
+            "indicator": indicator,
+            "symbol": symbol,
+            "interval": interval,
+            "period": period,
+            "value": value
+        })
 
     except Exception as e:
-        print("❌ ERROR inside /indicator:", str(e))
         return jsonify({"error": str(e)}), 500
