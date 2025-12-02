@@ -1,12 +1,18 @@
-from flask import Blueprint, jsonify
-from services.mvrv_service import get_mvrv_data
+from flask import Blueprint, jsonify, request
+from services.mvrv_service import calc_mvrv_z, update_price_buffer
 
 bp = Blueprint("mvrv", __name__)
 
-@bp.route("/mvrv", methods=["GET"])
-def mvrv_endpoint():
+@bp.route("/mvrv", methods=["POST", "GET"])
+def mvrv_get():
     """
-    MVRV_Z 계산 API
+    GET → Apps Script용 MVRV-Z 반환
+    POST → Collector에서 가격 업데이트
     """
-    data = get_mvrv_data()
-    return jsonify(data)
+
+    if request.method == "POST":
+        data = request.json
+        update_price_buffer(data.get("price"))
+        return jsonify({"status": "updated"})
+
+    return jsonify({"MVRV_Z": calc_mvrv_z()})
