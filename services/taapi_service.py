@@ -1,7 +1,8 @@
 import requests
+import os
 
 TAAPI = "https://api.taapi.io"
-KEY = "YOUR_KEY"   # 있으면 사용, 없으면 기본 무료버전
+KEY = os.getenv("TAAPI_KEY") # 있으면 사용, 없으면 기본 무료버전
 # Render Proxy를 다시 부르는 호출은 없음 → 완전 안전화
 # PROXY 제거됨
 
