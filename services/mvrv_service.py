@@ -1,53 +1,60 @@
-import numpy as np
+# services/mvrv_service.py
 from services.google_sheets import read_sheet
+import numpy as np
 
 def calculate_mvrv_z():
     """
-    CoinMetrics Realized Price의 근사치(EMA155)를 이용해
-    실제 MVRV_Z와 90% 이상 유사한 값을 계산하는 함수
+    Genie의 가격 데이터(genie_data_v5)를 기반으로
+    BTC MVRV Z-Score를 추정해 반환한다.
     """
 
-    data = read_sheet("genie_data_v5")
+    try:
+        data = read_sheet("genie_data_v5")
 
-    # 가격 추출
-    prices = [float(row[1]) for row in data if row[1] not in ("", None)]
+        if len(data) < 160:
+            return None, "not enough data (>=160 rows needed)"
 
-    if len(prices) < 200:
-        return None, "Not enough history (200+ required)"
+        # -------------------------
+        # 1) 가장 최근 BTC 가격
+        # -------------------------
+        last = data[-1]
+        btc_price = float(last[1])   # 2번째 컬럼이 BTC/USD
 
-    # ===== Realized Price ≈ EMA155 =====
-    realized_price = ema(prices, 155)[-1]   # 마지막 값만 사용
+        # -------------------------
+        # 2) long-term average (155-step EMA)
+        # -------------------------
+        prices = [float(row[1]) for row in data[-200:]]
 
-    current_price = prices[-1]
+        ema_155 = ema(prices, 155)
 
-    # ===== MVRV 계산 =====
-    mvrv_now = current_price / realized_price
+        # -------------------------
+        # 3) standard deviation
+        # -------------------------
+        std = np.std(prices)
 
-    # ===== 지난 200일 MVRV 리스트 =====
-    mvrv_list = [
-        prices[i] / ema(prices[:i+1], 155)[-1]
-        for i in range(155, len(prices))
-    ]
+        # -------------------------
+        # 4) Z-score 계산
+        # -------------------------
+        if std == 0:
+            return None, "std=0 error"
 
-    mean_m = np.mean(mvrv_list)
-    std_m = np.std(mvrv_list)
+        z = (btc_price - ema_155) / std
 
-    z = (mvrv_now - mean_m) / std_m
+        return round(z, 3), "EMA155 model"
 
-    return z, "MVRV_Z Approx (EMA155 model)"
+    except Exception as e:
+        return None, f"error: {str(e)}"
 
 
-def ema(values, length):
-    """
-    단순 지수이동평균 계산기 (EMA)
-    """
-    ema_values = []
-    k = 2 / (length + 1)
+# ------------------------------------------------------
+# 내부 보조 함수: EMA (지수 이동 평균)
+# ------------------------------------------------------
 
-    for i, v in enumerate(values):
-        if i == 0:
-            ema_values.append(v)
-        else:
-            ema_values.append(v * k + ema_values[-1] * (1 - k))
+def ema(values, period):
+    alpha = 2 / (period + 1)
+    ema_val = values[0]
 
-    return ema_values
+    for price in values[1:]:
+        ema_val = alpha * price + (1 - alpha) * ema_val
+
+    return ema_val
