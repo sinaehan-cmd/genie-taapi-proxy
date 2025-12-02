@@ -1,32 +1,23 @@
 import requests
-import os
 
-# 실제 TAAPI API URL
-TAAPI_BASE = "https://api.taapi.io"
-
-# 환경변수에서 KEY 읽기
-TAAPI_KEY = os.getenv("TAAPI_KEY")
-
+TAAPI = "https://api.taapi.io"
+PROXY_BASE = "https://genie-taapi-proxy-1.onrender.com"
 
 def fetch_indicator(indicator, symbol="BTC/USDT", interval="1h", period=None):
     """
-    Proxy가 아닌, 실제 TAAPI.io API를 직접 호출하는 함수
+    Proxy 서버에서 단일 value 지표 받아오기 (RSI, EMA 등)
+    MACD는 여기서 호출하면 안 되고 별도 함수 사용해야 함.
     """
-
     try:
-        params = {
-            "secret": TAAPI_KEY,
-            "exchange": "binance",
-            "symbol": symbol,
-            "interval": interval
-        }
+        # MACD는 별도 함수 사용하도록 보호
+        if indicator.lower() == "macd":
+            return None  
 
+        url = f"{PROXY_BASE}/indicator?indicator={indicator}&symbol={symbol}&interval={interval}"
         if period:
-            params["period"] = period
+            url += f"&period={period}"
 
-        url = f"{TAAPI_BASE}/{indicator}"
-        r = requests.get(url, params=params, timeout=10).json()
-
+        r = requests.get(url, timeout=8).json()
         return r.get("value")
 
     except Exception as e:
@@ -34,14 +25,32 @@ def fetch_indicator(indicator, symbol="BTC/USDT", interval="1h", period=None):
         return None
 
 
-# 개별 helper
+# ―――――――――――――――――――――――
+# ⭐ MACD 전용 파서 (핵심)
+# ―――――――――――――――――――――――
+def taapi_macd(symbol="BTC/USDT", interval="1h"):
+    """
+    MACD는 valueMACD / valueMACDSignal / valueMACDHist 구조라
+    Proxy 서버를 그대로 호출하면 안 되고 Raw 호출해야 한다.
+    """
+    try:
+        url = f"{PROXY_BASE}/indicator?indicator=macd&symbol={symbol}&interval={interval}"
+        r = requests.get(url, timeout=8).json()
+
+        return {
+            "macd": r.get("valueMACD"),
+            "signal": r.get("valueMACDSignal"),
+            "hist": r.get("valueMACDHist")
+        }
+
+    except Exception as e:
+        print("❌ MACD fetch error:", e)
+        return {"macd": None, "signal": None, "hist": None}
+
+
+# ― 단일 지표 헬퍼 ―
 def taapi_rsi(symbol="BTC/USDT", interval="1h", period=14):
     return fetch_indicator("rsi", symbol, interval, period)
 
-
 def taapi_ema(symbol="BTC/USDT", interval="1h", period=20):
     return fetch_indicator("ema", symbol, interval, period)
-
-
-def taapi_macd(symbol="BTC/USDT", interval="1h"):
-    return fetch_indicator("macd", symbol, interval)
