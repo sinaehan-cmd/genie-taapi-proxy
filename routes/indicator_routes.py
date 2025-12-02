@@ -1,18 +1,25 @@
-# routes/indicator_routes.py
 from flask import Blueprint, request, jsonify
 from services.taapi_service import fetch_indicator
 
-bp = Blueprint("indicator_routes", __name__)
+bp = Blueprint("indicator", __name__, url_prefix="/indicator")
 
-@bp.route("/indicator")
+@bp.route("", methods=["GET"])
 def get_indicator():
-    indicator = request.args.get("indicator")
-    symbol = request.args.get("symbol")
-    interval = request.args.get("interval")
-    period = request.args.get("period")  # EMA 사용 가능
+    try:
+        indicator = request.args.get("indicator")
+        symbol = request.args.get("symbol", "BTC/USDT")
+        interval = request.args.get("interval", "1h")
 
-    if not indicator or not symbol or not interval:
-        return jsonify({"error": "missing params"}), 400
+        if not indicator:
+            return jsonify({"error": "indicator is required"}), 400
 
-    data = fetch_indicator(indicator, symbol, interval, period)
-    return jsonify(data)
+        # period 제거!
+        data = fetch_indicator(indicator, symbol, interval)
+
+        print("🔥 DEBUG /indicator result:", data)
+
+        return jsonify(data)
+
+    except Exception as e:
+        print("❌ ERROR inside /indicator:", str(e))
+        return jsonify({"error": str(e)}), 500
