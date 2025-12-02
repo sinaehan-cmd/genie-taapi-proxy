@@ -1,70 +1,36 @@
 import requests
-import os
 
-TAAPI_KEY = os.getenv("TAAPI_KEY")
-TAAPI_BASE = "https://api.taapi.io"
+TAAPI = "https://api.taapi.io"
+KEY = "YOUR_KEY"   # 있으면 사용, 없으면 기본 무료버전
+# Render Proxy를 다시 부르는 호출은 없음 → 완전 안전화
+# PROXY 제거됨
 
 
-def _call_taapi(endpoint, params):
-    """TAAPI를 직접 호출하는 안전한 공통 함수"""
+def fetch_raw(indicator, symbol, interval, period=None):
+    """TAAPI 원본 호출 함수"""
+    url = f"{TAAPI}/{indicator}?secret={KEY}&exchange=binance&symbol={symbol}&interval={interval}"
+    if period:
+        url += f"&period={period}"
+
     try:
-        params["secret"] = TAAPI_KEY
-        url = f"{TAAPI_BASE}/{endpoint}"
-        r = requests.get(url, params=params, timeout=8).json()
-
+        r = requests.get(url, timeout=8).json()
         return r
-    except Exception as e:
-        print("❌ TAAPI error:", e)
-        return None
+    except:
+        return {}
 
 
-# --------------------------------------------------------
-# RSI (value 반환)
-# --------------------------------------------------------
 def taapi_rsi(symbol="BTC/USDT", interval="1h", period=14):
-    r = _call_taapi("rsi", {
-        "exchange": "binance",
-        "symbol": symbol,
-        "interval": interval,
-        "optInTimePeriod": period
-    })
-
-    if not r:
-        return {"value": None}
-
+    r = fetch_raw("rsi", symbol, interval, period)
     return {"value": r.get("value")}
 
 
-# --------------------------------------------------------
-# EMA (value 반환)
-# --------------------------------------------------------
 def taapi_ema(symbol="BTC/USDT", interval="1h", period=20):
-    r = _call_taapi("ema", {
-        "exchange": "binance",
-        "symbol": symbol,
-        "interval": interval,
-        "optInTimePeriod": period
-    })
-
-    if not r:
-        return {"value": None}
-
+    r = fetch_raw("ema", symbol, interval, period)
     return {"value": r.get("value")}
 
 
-# --------------------------------------------------------
-# MACD (3종 반환)
-# --------------------------------------------------------
 def taapi_macd(symbol="BTC/USDT", interval="1h"):
-    r = _call_taapi("macd", {
-        "exchange": "binance",
-        "symbol": symbol,
-        "interval": interval
-    })
-
-    if not r:
-        return {"macd": None, "signal": None, "hist": None}
-
+    r = fetch_raw("macd", symbol, interval)
     return {
         "macd": r.get("valueMACD"),
         "signal": r.get("valueMACDSignal"),
