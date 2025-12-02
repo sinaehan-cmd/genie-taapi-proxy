@@ -1,9 +1,10 @@
 from flask import Flask
-from routes.view_routes import bp as view_bp
-from routes.write_routes import bp as write_bp
-from routes.loop_routes import bp as loop_bp
+from routes.view_routes import view_bp
+from routes.write_routes import write_bp
+from routes.loop_routes import loop_bp
 from routes.dominance_routes import bp as dominance_bp
 from routes.mvrv_routes import bp as mvrv_bp
+
 
 # ─────────────────────────────────────────────
 # Flask Application Factory
@@ -27,7 +28,7 @@ def create_app():
 
 # ─────────────────────────────────────────────
 # Standalone 실행 (개발용)
-# Render / Gunicorn 환경에서는 create_app()만 호출됨
+# Render / Gunicorn에서는 create_app()만 사용
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
     app = create_app()
