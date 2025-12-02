@@ -1,38 +1,62 @@
-# routes/indicator_routes.py
 from flask import Blueprint, request, jsonify
-from services.taapi_service import get_taapi_indicator   # 🔥 fetch_indicator 대신 이걸 사용
-from utils.response import success, error
+from services.taapi_service import (
+    taapi_rsi,
+    taapi_ema,
+    taapi_macd
+)
 
-bp = Blueprint("indicator", __name__, url_prefix="/indicator")
+bp = Blueprint("indicator", __name__)
 
-@bp.route("", methods=["GET"])
-def indicator_handler():
+
+@bp.route("/indicator", methods=["GET"])
+def get_indicator():
     """
-    안전 패치 버전:
-    - 절대 /indicator 내부에서 다시 /indicator 호출하지 않음
-    - 모든 TAAPI 호출은 services/taapi_service.py의 get_taapi_indicator() 단일 경로로만 실행
-    - timeout 발생 시 바로 '값없음' 반환 → 무한 재시도 방지
+    모든 지표 호출 – Render는 절대 자기 자신을 다시 부르지 않는다.
+    RSI / EMA / MACD를 TAAPI 원본에서 가져와 응답.
     """
 
-    indicator = request.args.get("indicator")
-    symbol = request.args.get("symbol", "BTC/USDT")
-    interval = request.args.get("interval", "1h")
-    period = request.args.get("period")
+    try:
+        indicator = request.args.get("indicator")
+        symbol = request.args.get("symbol", "BTC/USDT")
+        interval = request.args.get("interval", "1h")
+        period = request.args.get("period", None)
 
-    if not indicator:
-        return error("indicator parameter is required", 400)
+        # ------------------------------
+        # RSI
+        # ------------------------------
+        if indicator == "rsi":
+            r = taapi_rsi(symbol, interval, period)
+            return jsonify({
+                "indicator": "rsi",
+                "value": r.get("value", "값없음")
+            })
 
-    # 🔥 핵심: 절대 이 라우트 내부에서 자기 자신(/indicator)을 다시 호출하지 않음
-    result = get_taapi_indicator(
-        indicator=indicator,
-        symbol=symbol,
-        interval=interval,
-        period=period
-    )
+        # ------------------------------
+        # EMA
+        # ------------------------------
+        if indicator == "ema":
+            e = taapi_ema(symbol, interval, period)
+            return jsonify({
+                "indicator": "ema",
+                "value": e.get("value", "값없음")
+            })
 
-    # 실패 처리
-    if result is None or result == "값없음":
-        return jsonify({"value": "값없음"}), 200
+        # ------------------------------
+        # MACD (전용 구조)
+        # ------------------------------
+        if indicator == "macd":
+            m = taapi_macd(symbol, interval)
+            return jsonify({
+                "indicator": "macd",
+                "valueMACD": m["macd"],
+                "valueMACDSignal": m["signal"],
+                "valueMACDHist": m["hist"]
+            })
 
-    # 정상
-    return jsonify(result), 200
+        # ------------------------------
+        # 잘못된 경우
+        # ------------------------------
+        return jsonify({"error": "unknown indicator"}), 400
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
