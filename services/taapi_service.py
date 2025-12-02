@@ -1,23 +1,32 @@
 import requests
 import os
 
-# Render Proxy URL
-PROXY_BASE = "https://genie-taapi-proxy-1.onrender.com"
+# 실제 TAAPI API URL
+TAAPI_BASE = "https://api.taapi.io"
+
+# 환경변수에서 KEY 읽기
+TAAPI_KEY = os.getenv("TAAPI_KEY")
 
 
 def fetch_indicator(indicator, symbol="BTC/USDT", interval="1h", period=None):
     """
-    모든 지표를 Proxy 서버에서 받아오는 공통 함수
-
-    /indicator?indicator=rsi&symbol=BTC/USDT&interval=1h&period=14
+    Proxy가 아닌, 실제 TAAPI.io API를 직접 호출하는 함수
     """
+
     try:
-        url = f"{PROXY_BASE}/indicator?indicator={indicator}&symbol={symbol}&interval={interval}"
+        params = {
+            "secret": TAAPI_KEY,
+            "exchange": "binance",
+            "symbol": symbol,
+            "interval": interval
+        }
 
         if period:
-            url += f"&period={period}"
+            params["period"] = period
 
-        r = requests.get(url, timeout=10).json()
+        url = f"{TAAPI_BASE}/{indicator}"
+        r = requests.get(url, params=params, timeout=10).json()
+
         return r.get("value")
 
     except Exception as e:
@@ -25,10 +34,7 @@ def fetch_indicator(indicator, symbol="BTC/USDT", interval="1h", period=None):
         return None
 
 
-# ------------------------------
-# 개별 helper 함수 (편의용)
-# ------------------------------
-
+# 개별 helper
 def taapi_rsi(symbol="BTC/USDT", interval="1h", period=14):
     return fetch_indicator("rsi", symbol, interval, period)
 
