@@ -1,75 +1,89 @@
 import requests
 
-# -----------------------------
+# ----------------------------------------
+# ✔ 공통 요청 함수 (안정성 강화)
+# ----------------------------------------
+def safe_request(url, timeout=5):
+    try:
+        r = requests.get(url, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        print(f"❌ Request error: {url}", e)
+        return None
+
+
+# ----------------------------------------
 # USD/KRW 환율
-# -----------------------------
+# ----------------------------------------
 def get_usd_krw():
     """
     현재 USD/KRW 환율 가져오기
     """
-    try:
-        url = "https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD"
-        r = requests.get(url, timeout=5).json()
-        return r[0].get("basePrice")
-    except Exception as e:
-        print("❌ USD/KRW fetch error:", e)
+    url = "https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD"
+    data = safe_request(url)
+
+    if not data or not isinstance(data, list):
         return None
 
+    return data[0].get("basePrice")
 
-# -----------------------------
+
+# ----------------------------------------
 # Fear & Greed Index
-# -----------------------------
+# ----------------------------------------
 def get_fng_index():
     """
-    Fear & Greed Index 가져오기
+    Fear & Greed Index 값 가져오기
     """
-    try:
-        url = "https://api.alternative.me/fng/?limit=1"
-        r = requests.get(url, timeout=5).json()
-        return r["data"][0].get("value")
-    except Exception as e:
-        print("❌ FNG fetch error:", e)
+    url = "https://api.alternative.me/fng/?limit=1"
+    data = safe_request(url)
+
+    if not data:
         return None
 
+    value = data.get("data", [{}])[0].get("value")
 
-# -----------------------------
+    # 문자열이므로 숫자 변환 시도
+    try:
+        return int(value)
+    except:
+        return value  # 원본 그대로 반환
+
+
+# ----------------------------------------
 # BTC Dominance Snapshot
-# -----------------------------
+# ----------------------------------------
 def dominance_snapshot():
     """
-    BTC 도미넌스 스냅샷 (간단 버전)
-    - /dominance/snapshot, /dominance/packet 둘 다 여기 기반으로 사용
+    BTC 도미넌스 스냅샷(간단 버전)
+    /dominance/snapshot 과 /dominance/packet에서 공통 사용
     """
-    try:
-        url = "https://api.coingecko.com/api/v3/global"
-        r = requests.get(url, timeout=5).json()
-        data = r.get("data", {})
+    url = "https://api.coingecko.com/api/v3/global"
+    data = safe_request(url)
 
-        dominance = data.get("market_cap_percentage", {}).get("btc")
-        total_market_cap = data.get("total_market_cap", {}).get("usd")
-
-        return {
-            "btc_dominance": dominance,
-            "total_market_cap_usd": total_market_cap,
-        }
-    except Exception as e:
-        print("❌ Dominance fetch error:", e)
+    if not data:
         return {
             "btc_dominance": None,
             "total_market_cap_usd": None,
         }
 
-# -----------------------------
-# MVRV Z-Score Fetcher (Basic)
-# -----------------------------
+    inner = data.get("data", {})
+
+    return {
+        "btc_dominance": inner.get("market_cap_percentage", {}).get("btc"),
+        "total_market_cap_usd": inner.get("total_market_cap", {}).get("usd"),
+    }
+
+
+# ----------------------------------------
+# MVRV Z-Score Fetcher (placeholder)
+# ----------------------------------------
 def mvrv_run():
     """
-    Coinglass or CryptoQuant API가 없기 때문에
-    일단은 구조만 반환하는 더미 함수.
-    나중에 실제 API 연결하면 여기에 붙이면 됨.
+    실제 API를 붙이기 전까지 구조만 반환하는 플레이스홀더
     """
     try:
-        # 임시 값 (None 대신 기본값 0.0 반환)
         return {
             "btc_mvrv": 0.0,
             "eth_mvrv": 0.0,
@@ -79,6 +93,6 @@ def mvrv_run():
         print("❌ MVRV fetch error:", e)
         return {
             "btc_mvrv": None,
-            "eth_mvrv": None
+            "eth_mvrv": None,
+            "note": "error"
         }
-
