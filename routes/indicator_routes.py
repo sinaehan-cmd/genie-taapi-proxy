@@ -10,18 +10,24 @@ def get_indicator():
     interval = request.args.get("interval", "1h")
     period = request.args.get("period")
 
+    # ----- RSI -----
     if indicator == "rsi":
         r = taapi_rsi(symbol, interval, period)
-        return jsonify({"indicator": "rsi", "value": r["value"]})
+        return jsonify({
+            "value": r["value"] if r["value"] is not None else "값없음"
+        })
 
+    # ----- EMA -----
     if indicator == "ema":
         e = taapi_ema(symbol, interval, period)
-        return jsonify({"indicator": "ema", "value": e["value"]})
+        return jsonify({
+            "value": e["value"] if e["value"] is not None else "값없음"
+        })
 
+    # ----- MACD -----
     if indicator == "macd":
         m = taapi_macd(symbol, interval)
         return jsonify({
-            "indicator": "macd",
             "valueMACD": m["macd"],
             "valueMACDSignal": m["signal"],
             "valueMACDHist": m["hist"]
