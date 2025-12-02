@@ -1,32 +1,41 @@
-import os
 import requests
+import os
 
-TAAPI_KEY = os.getenv("TAAPI_KEY")
+# Render Proxy URL
+PROXY_BASE = "https://genie-taapi-proxy-1.onrender.com"
 
-BASE_URL = "https://api.taapi.io"
 
-def fetch_indicator(indicator, symbol="BTC/USDT", interval="1h"):
+def fetch_indicator(indicator, symbol="BTC/USDT", interval="1h", period=None):
     """
-    TAAPI 요청 → Genie 서버가 직접 호출해서 반환하는 함수
+    모든 지표를 Proxy 서버에서 받아오는 공통 함수
+
+    /indicator?indicator=rsi&symbol=BTC/USDT&interval=1h&period=14
     """
     try:
-        url = f"{BASE_URL}/{indicator}"
+        url = f"{PROXY_BASE}/indicator?indicator={indicator}&symbol={symbol}&interval={interval}"
 
-        params = {
-            "secret": TAAPI_KEY,
-            "exchange": "binance",
-            "symbol": symbol,
-            "interval": interval
-        }
+        if period:
+            url += f"&period={period}"
 
-        r = requests.get(url, params=params, timeout=8)
-        data = r.json()
-
-        # TAAPI가 에러 반환하면 바로 전달
-        if "error" in data:
-            return {"error": data["error"]}
-
-        return data
+        r = requests.get(url, timeout=10).json()
+        return r.get("value")
 
     except Exception as e:
-        return {"error": str(e)}
+        print(f"❌ fetch_indicator error: {e}")
+        return None
+
+
+# ------------------------------
+# 개별 helper 함수 (편의용)
+# ------------------------------
+
+def taapi_rsi(symbol="BTC/USDT", interval="1h", period=14):
+    return fetch_indicator("rsi", symbol, interval, period)
+
+
+def taapi_ema(symbol="BTC/USDT", interval="1h", period=20):
+    return fetch_indicator("ema", symbol, interval, period)
+
+
+def taapi_macd(symbol="BTC/USDT", interval="1h"):
+    return fetch_indicator("macd", symbol, interval)
