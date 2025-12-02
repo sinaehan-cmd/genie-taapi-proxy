@@ -14,6 +14,19 @@ app.register_blueprint(loop_bp)
 def home():
     return "Genie Server v2025.12 — OK"
 
+def create_app():
+    app = Flask(__name__)
+
+    from routes.dominance_routes import bp as dominance_bp
+    from routes.mvrv_routes import bp as mvrv_bp
+
+    app.register_blueprint(dominance_bp)
+    app.register_blueprint(mvrv_bp)
+
+    return app
+
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
 
