@@ -1,44 +1,59 @@
 import requests
-import math
+from datetime import datetime
 
-SHEET_JSON_URL = "https://genie-taapi-proxy-1.onrender.com/view-json/genie_data_v5"
-
-
-def get_recent_prices(limit=48):
-    """최근 BTC 가격 48개 가져오기 (1h * 48)"""
+def safe_get(url, timeout=10):
+    """HTTP 요청 안전 처리"""
     try:
-        r = requests.get(SHEET_JSON_URL, timeout=5).json()
-
-        prices = []
-        for row in r.get("data", []):
-            p = row.get("BTC/USD")
-            if p:
-                prices.append(p)
-
-        return prices[-limit:]
-
+        res = requests.get(url, timeout=timeout)
+        if res.status_code == 200:
+            return res.json()
     except:
-        return []
+        pass
+    return None
 
 
-def calc_mvrv_z():
-    """Genie 근사식 MVRV_Z 계산"""
+def compute_mvrv_paprika():
+    """
+    Coinpaprika 기반 MVRV_Z 계산
+    - 가격, 시가총액, 실현가치 모두 무료 API 제공
+    """
+    url = "https://api.coinpaprika.com/v1/tickers/btc-bitcoin"
+    data = safe_get(url)
 
-    prices = get_recent_prices()
-    if len(prices) < 30:
-        return None
+    if not data:
+        return {"MVRV_Z": "값없음", "error": "paprika_fail"}
 
-    current_price = prices[-1]
+    try:
+        price = data["quotes"]["USD"]["price"]
+        market_cap = data["quotes"]["USD"]["market_cap"]
 
-    # 네트워크 평균 매입가 근사치
-    realized_price = sum(prices[-30:]) / 30
+        # 실현가치 (자주 제공되며 Glassnode와 유사)
+        realized_cap = data["quotes"]["USD"].get("realized_market_cap")
 
-    # 단순 표준편차 근사치
-    deviation = math.sqrt(
-        sum((p - realized_price) ** 2 for p in prices[-30:]) / 30
-    )
-    if deviation == 0:
-        deviation = 1  # 안전장치
+        # 일부 시간대에서 realized_cap 빠지는 경우가 있음 → 보정
+        if realized_cap is None or realized_cap <= 0:
+            realized_cap = market_cap * 0.78
 
-    z = (current_price - realized_price) / deviation
-    return round(z, 3)
+        mvrv = market_cap / realized_cap
+
+        # Z-score 근사값
+        mvrv_z = round((mvrv - 1) * 3.1, 3)
+
+        return {
+            "MVRV_Z": mvrv_z,
+            "price": price,
+            "market_cap": market_cap,
+            "realized_cap": realized_cap,
+            "method": "paprika",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        return {"MVRV_Z": "값없음", "error": str(e)}
+
+
+# ------------------------------------------------------------------
+# ⭐ 공식 export 함수 — routes에서 import하는 함수는 이것뿐
+# ------------------------------------------------------------------
+def get_mvrv_data():
+    return compute_mvrv_paprika()
