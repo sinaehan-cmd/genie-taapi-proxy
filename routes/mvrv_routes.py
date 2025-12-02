@@ -1,13 +1,12 @@
 from flask import Blueprint, jsonify
-from services.market_service import mvrv_run
+from services.market_service import mvrv_run   # ★ 반드시 여기로!
 
-bp = Blueprint("mvrv_routes", __name__)
+bp = Blueprint("mvrv", __name__, url_prefix="/mvrv")
 
-@bp.route("/mvrv/run")
-def mvrv_run_route():
-    return jsonify(mvrv_run())
-
-# Apps Script 구버전 호환
-@bp.route("/mvrv")
-def mvrv_redirect():
-    return jsonify(mvrv_run())
+@bp.route("/run", methods=["GET"])
+def run_mvrv():
+    """
+    단순 MVRV 값 반환
+    """
+    result = mvrv_run()
+    return jsonify(result)
