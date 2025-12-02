@@ -4,6 +4,7 @@ from routes.write_routes import write_bp
 from routes.loop_routes import loop_bp
 from routes.dominance_routes import bp as dominance_bp
 from routes.mvrv_routes import bp as mvrv_bp
+from routes.indicator_routes import bp as indicator_bp
 
 # ─────────────────────────────────────────────
 # Flask Application Factory
@@ -17,6 +18,7 @@ def create_app():
     app.register_blueprint(loop_bp)
     app.register_blueprint(dominance_bp)
     app.register_blueprint(mvrv_bp)
+    app.register_blueprint(indicator_bp)
 
     @app.route("/")
     def home():
