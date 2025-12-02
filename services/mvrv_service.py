@@ -1,60 +1,44 @@
-# services/mvrv_service.py
-from services.google_sheets import read_sheet
-import numpy as np
+import requests
+import math
 
-def calculate_mvrv_z():
-    """
-    Genie의 가격 데이터(genie_data_v5)를 기반으로
-    BTC MVRV Z-Score를 추정해 반환한다.
-    """
+SHEET_JSON_URL = "https://genie-taapi-proxy-1.onrender.com/view-json/genie_data_v5"
 
+
+def get_recent_prices(limit=48):
+    """최근 BTC 가격 48개 가져오기 (1h * 48)"""
     try:
-        data = read_sheet("genie_data_v5")
+        r = requests.get(SHEET_JSON_URL, timeout=5).json()
 
-        if len(data) < 160:
-            return None, "not enough data (>=160 rows needed)"
+        prices = []
+        for row in r.get("data", []):
+            p = row.get("BTC/USD")
+            if p:
+                prices.append(p)
 
-        # -------------------------
-        # 1) 가장 최근 BTC 가격
-        # -------------------------
-        last = data[-1]
-        btc_price = float(last[1])   # 2번째 컬럼이 BTC/USD
+        return prices[-limit:]
 
-        # -------------------------
-        # 2) long-term average (155-step EMA)
-        # -------------------------
-        prices = [float(row[1]) for row in data[-200:]]
-
-        ema_155 = ema(prices, 155)
-
-        # -------------------------
-        # 3) standard deviation
-        # -------------------------
-        std = np.std(prices)
-
-        # -------------------------
-        # 4) Z-score 계산
-        # -------------------------
-        if std == 0:
-            return None, "std=0 error"
-
-        z = (btc_price - ema_155) / std
-
-        return round(z, 3), "EMA155 model"
-
-    except Exception as e:
-        return None, f"error: {str(e)}"
+    except:
+        return []
 
 
-# ------------------------------------------------------
-# 내부 보조 함수: EMA (지수 이동 평균)
-# ------------------------------------------------------
+def calc_mvrv_z():
+    """Genie 근사식 MVRV_Z 계산"""
 
-def ema(values, period):
-    alpha = 2 / (period + 1)
-    ema_val = values[0]
+    prices = get_recent_prices()
+    if len(prices) < 30:
+        return None
 
-    for price in values[1:]:
-        ema_val = alpha * price + (1 - alpha) * ema_val
+    current_price = prices[-1]
 
-    return ema_val
+    # 네트워크 평균 매입가 근사치
+    realized_price = sum(prices[-30:]) / 30
+
+    # 단순 표준편차 근사치
+    deviation = math.sqrt(
+        sum((p - realized_price) ** 2 for p in prices[-30:]) / 30
+    )
+    if deviation == 0:
+        deviation = 1  # 안전장치
+
+    z = (current_price - realized_price) / deviation
+    return round(z, 3)
