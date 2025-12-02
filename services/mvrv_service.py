@@ -1,59 +1,76 @@
 import requests
-from datetime import datetime
+import math
+import statistics
 
-def safe_get(url, timeout=10):
-    """HTTP 요청 안전 처리"""
-    try:
-        res = requests.get(url, timeout=timeout)
-        if res.status_code == 200:
-            return res.json()
-    except:
-        pass
-    return None
+# 이동평균 기간
+WINDOW = 180
+
+# 지니 고유 스무딩 계수
+LAMBDA = 0.94
 
 
-def compute_mvrv_paprika():
+def fetch_btc_history(days=WINDOW):
     """
-    Coinpaprika 기반 MVRV_Z 계산
-    - 가격, 시가총액, 실현가치 모두 무료 API 제공
+    BTC 과거 가격을 CoinGecko에서 가져옴.
     """
-    url = "https://api.coinpaprika.com/v1/tickers/btc-bitcoin"
-    data = safe_get(url)
+    url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days={days}"
+    r = requests.get(url, timeout=10).json()
 
-    if not data:
-        return {"MVRV_Z": "값없음", "error": "paprika_fail"}
+    prices = [p[1] for p in r.get("prices", [])]
+    return prices[-WINDOW:] if len(prices) >= WINDOW else prices
+
+
+def calculate_realized_cap(prices):
+    """
+    지니 근사 Realized Cap 계산:
+    - 과거 가격의 지수 가중 평균 기반
+    """
+    if not prices:
+        return None
+
+    weights = [(LAMBDA ** i) for i in range(len(prices))]
+    weights.reverse()
+
+    realized = sum(p * w for p, w in zip(prices, weights)) / sum(weights)
+    return realized
+
+
+def calculate_std(prices):
+    """
+    시장 변동성 근사 (Glassnode 방식의 rolling variance simple 버전)
+    """
+    if not prices or len(prices) < 30:
+        return None
+
+    return statistics.pstdev(prices)
+
+
+def calc_mvrv_z(current_price=None):
+    """
+    ⭐ 지니 오리지널 MVRV_Z 계산 공식 복원본
+    """
 
     try:
-        price = data["quotes"]["USD"]["price"]
-        market_cap = data["quotes"]["USD"]["market_cap"]
+        prices = fetch_btc_history()
 
-        # 실현가치 (자주 제공되며 Glassnode와 유사)
-        realized_cap = data["quotes"]["USD"].get("realized_market_cap")
+        if not prices:
+            return None
 
-        # 일부 시간대에서 realized_cap 빠지는 경우가 있음 → 보정
-        if realized_cap is None or realized_cap <= 0:
-            realized_cap = market_cap * 0.78
+        # 실시간 가격 없으면 최근 값 사용
+        if current_price is None:
+            current_price = prices[-1]
 
-        mvrv = market_cap / realized_cap
+        realized_cap = calculate_realized_cap(prices)
+        std = calculate_std(prices)
 
-        # Z-score 근사값
-        mvrv_z = round((mvrv - 1) * 3.1, 3)
+        if realized_cap is None or std is None or std == 0:
+            return None
 
-        return {
-            "MVRV_Z": mvrv_z,
-            "price": price,
-            "market_cap": market_cap,
-            "realized_cap": realized_cap,
-            "method": "paprika",
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        # Glassnode MVRV_Z 근사 공식
+        mvrv_z = (current_price - realized_cap) / std
+
+        return round(mvrv_z, 4)
 
     except Exception as e:
-        return {"MVRV_Z": "값없음", "error": str(e)}
-
-
-# ------------------------------------------------------------------
-# ⭐ 공식 export 함수 — routes에서 import하는 함수는 이것뿐
-# ------------------------------------------------------------------
-def get_mvrv_data():
-    return compute_mvrv_paprika()
+        print("MVRV calculation error:", e)
+        return None
