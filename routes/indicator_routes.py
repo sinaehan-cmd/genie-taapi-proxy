@@ -1,50 +1,35 @@
 from flask import Blueprint, request, jsonify
 from services.taapi_service import taapi_rsi, taapi_ema, taapi_macd
+from services.genie_indicator_calc import (
+    record_values,
+    get_dominance_4h,
+    get_dominance_1d,
+    calc_mvrv_z
+)
 
 bp = Blueprint("indicator", __name__)
 
-@bp.route("/indicator", methods=["GET"])
-def get_indicator():
+
+@bp.route("/indicator_extra", methods=["GET"])
+def get_indicator_extra():
     """
-    Apps Script가 기대하는 형태 그대로 응답해주는 최종 확정본.
-    Render 내부 계산값은 전달하지 않음.
+    지니 계산 지표:
+    - dominance_4h
+    - dominance_1d
+    - mvrv_z
     """
-    try:
-        indicator = request.args.get("indicator")
-        symbol = request.args.get("symbol", "BTC/USDT")
-        interval = request.args.get("interval", "1h")
-        period = request.args.get("period")
+    t = request.args.get("type")
 
-        # ------------------------------
-        # RSI
-        # ------------------------------
-        if indicator == "rsi":
-            r = taapi_rsi(symbol, interval, period)
-            return jsonify({
-                "value": r["value"] if r["value"] is not None else "값없음"
-            })
+    if t == "dominance_4h":
+        v = get_dominance_4h()
+        return jsonify({"indicator": "dominance_4h", "value": v})
 
-        # ------------------------------
-        # EMA
-        # ------------------------------
-        if indicator == "ema":
-            e = taapi_ema(symbol, interval, period)
-            return jsonify({
-                "value": e["value"] if e["value"] is not None else "값없음"
-            })
+    if t == "dominance_1d":
+        v = get_dominance_1d()
+        return jsonify({"indicator": "dominance_1d", "value": v})
 
-        # ------------------------------
-        # MACD
-        # ------------------------------
-        if indicator == "macd":
-            m = taapi_macd(symbol, interval)
-            return jsonify({
-                "valueMACD": m["macd"] if m["macd"] is not None else "값없음",
-                "valueMACDSignal": m["signal"] if m["signal"] is not None else "값없음",
-                "valueMACDHist": m["hist"] if m["hist"] is not None else "값없음"
-            })
+    if t == "mvrv_z":
+        v = calc_mvrv_z()
+        return jsonify({"indicator": "mvrv_z", "value": v})
 
-        return jsonify({"error": "unknown indicator"}), 400
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"error": "unknown type"}), 400
