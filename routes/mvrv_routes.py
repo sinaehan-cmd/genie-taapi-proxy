@@ -1,28 +1,35 @@
-from flask import Blueprint, request, jsonify
+# routes/mvrv_routes.py
+
+from flask import Blueprint, jsonify
 from services.mvrv_service import calc_mvrv_z, update_price_buffer
-from services.google_sheets import read_sheet_last_row
+import requests
 
-bp = Blueprint("mvrv_routes", __name__)
+bp = Blueprint("mvrv", __name__)
 
-@bp.route("/mvrv/run", methods=["POST"])
-def mvrv_run():
-    # 1) 지니 데이터 시트에서 마지막 행 읽기
-    row = read_sheet_last_row("genie_data_v5")
-
-    if not row:
-        return jsonify({"error": "no data"}), 500
-
-    # 2) BTC 가격 열이 2번째 컬럼이라면 (인덱스 1)
+def fetch_btc_price():
+    """Binance 가격을 직접 가져와 서버에서 계산"""
     try:
-        btc_price = float(row[1])
-        update_price_buffer(btc_price)
+        r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
+        return float(r["price"])
     except:
-        btc_price = None
+        return None
 
-    # 3) 계산
+
+@bp.route("/mvrv", methods=["GET"])
+def get_mvrv():
+    # 1) BTC 가격 직접 가져오기
+    price = fetch_btc_price()
+
+    if price is None:
+        return jsonify({"MVRV_Z": None, "error": "price_fetch_failed"})
+
+    # 2) 버퍼 업데이트
+    update_price_buffer(price)
+
+    # 3) 계산 수행
     z = calc_mvrv_z()
 
     return jsonify({
-        "btc_price": btc_price,
-        "mvrv_z": z
+        "BTC_Price": price,
+        "MVRV_Z": z
     })
