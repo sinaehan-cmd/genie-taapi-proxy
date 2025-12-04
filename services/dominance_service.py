@@ -1,64 +1,53 @@
 import requests
 
-# Dominance 저장 버퍼 (24개 = 24시간 기준)
 DOM_BUFFER = []
 MAX_LEN = 24
 
-
 # ------------------------------
-# 1) 실시간 도미넌스 백업 API 3종
+# 1) Coingecko
 # ------------------------------
 def fetch_primary():
     try:
         r = requests.get(
             "https://api.coingecko.com/api/v3/global",
-            timeout=8
+            timeout=6
         ).json()
-        return round(r["data"]["market_cap_percentage"]["btc"], 2)
+        # 구조가 맞으면:
+        v = r["data"]["market_cap_percentage"]["btc"]
+        return round(float(v), 2)
     except:
         return None
 
-
+# ------------------------------
+# 2) Coinpaprika — 정상 동작 버전
+# ------------------------------
 def fetch_backup():
     try:
         r = requests.get(
             "https://api.coinpaprika.com/v1/global",
-            timeout=8
+            timeout=6
         ).json()
-        btc = r.get("bitcoin_market_cap_usd")
-        total = r.get("market_cap_usd_global")
-        if btc and total:
-            return round((btc / total) * 100, 2)
-        return None
+
+        # coinpaprika는 이미 도미넌스 값 자체를 제공한다!
+        v = r.get("bitcoin_dominance_percentage")
+        if v is None:
+            return None
+        
+        return round(float(v), 2)
     except:
         return None
-
-
-def fetch_coinstats():
-    try:
-        r = requests.get(
-            "https://api.coinstats.app/public/v1/global",
-            timeout=8
-        ).json()
-        return round(float(r.get("bitcoinDominance")), 2)
-    except:
-        return None
-
 
 # ------------------------------
-# 2) 실시간 Dominance 최종 결정
+# 3) 제거 — Coinstats는 폐기됨
 # ------------------------------
 def get_realtime_dominance():
-    for fn in [fetch_primary, fetch_backup, fetch_coinstats]:
+    for fn in [fetch_primary, fetch_backup]:
         v = fn()
         if v is not None:
             return v
     return None
 
-
-# ------------------------------
-# 3) 버퍼 업데이트
-# ------------------------------
+# 버퍼 업데이트
 def update_buffer(v):
     if v is None:
         return
@@ -66,25 +55,19 @@ def update_buffer(v):
     if len(DOM_BUFFER) > MAX_LEN:
         DOM_BUFFER.pop(0)
 
-
-# ------------------------------
-# 4) 4h / 1d Dominance 계산
-# ------------------------------
+# 4h 계산
 def calc_dom_4h():
     if len(DOM_BUFFER) < 4:
         return None
     return round(sum(DOM_BUFFER[-4:]) / 4, 2)
 
-
+# 1d 계산
 def calc_dom_1d():
     if len(DOM_BUFFER) < 24:
         return None
     return round(sum(DOM_BUFFER[-24:]) / 24, 2)
 
-
-# ------------------------------
-# 5) Render 주는 패킷
-# ------------------------------
+# 최종 패킷
 def get_dominance_packet():
     now_dom = get_realtime_dominance()
     update_buffer(now_dom)
