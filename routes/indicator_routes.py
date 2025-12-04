@@ -1,75 +1,61 @@
 # routes/indicator_routes.py
 from flask import Blueprint, request, jsonify
 from services.taapi_service import taapi_rsi, taapi_ema, taapi_macd
-from services.genie_indicator_calc import (
-    get_dominance_4h,
-    get_dominance_1d,
-)
-from services.mvrv_service import calc_mvrv_z
 
 bp = Blueprint("indicator_routes", __name__)
-
 
 @bp.route("/indicator", methods=["GET"])
 def get_indicator():
     """
-    Collector 호출 형식과 100% 호환되도록 정리된 버전
+    /indicator?indicator=rsi&symbol=BTC/USDT&interval=1h
+    /indicator?indicator=ema&symbol=BTC/USDT&interval=1h&period=20
+    /indicator?indicator=macd&symbol=BTC/USDT&interval=1h
 
-    예:
-      /indicator?indicator=rsi&symbol=BTC/USDT&interval=1h
-      /indicator?indicator=ema&symbol=BTC/USDT&interval=1h&period=20
-      /indicator?indicator=macd&symbol=BTC/USDT&interval=1h
+    Apps Script는 아래 형식의 "단일 값 또는 숫자 필드"를 기대한다:
+
+    { "value": 47.22 }
+    { "value": 93000.22 }
+    { "macd": 200, "signal": 180, "hist": -20 }
     """
 
     ind = request.args.get("indicator")
+    symbol = request.args.get("symbol", "BTC/USDT")
+    interval = request.args.get("interval", "1h")
 
-    # ---------- RSI ----------
+    # --------------------------------------------------------
+    # RSI
+    # --------------------------------------------------------
     if ind == "rsi":
-        symbol = request.args.get("symbol", "BTC/USDT")
-        interval = request.args.get("interval", "1h")
+        raw = taapi_rsi(symbol=symbol, interval=interval)
+        # raw → {"value": 47.22}
         return jsonify({
             "indicator": "rsi",
-            "value": taapi_rsi(symbol, interval)
+            "value": raw.get("value")
         })
 
-    # ---------- EMA ----------
+    # --------------------------------------------------------
+    # EMA
+    # --------------------------------------------------------
     if ind == "ema":
-        symbol = request.args.get("symbol", "BTC/USDT")
-        interval = request.args.get("interval", "1h")
-        period = request.args.get("period", "20")
+        period = request.args.get("period", 20)
+        raw = taapi_ema(symbol=symbol, interval=interval, period=period)
+        # raw → {"value": 93000.12}
         return jsonify({
             "indicator": "ema",
-            "value": taapi_ema(symbol, interval, period)
+            "value": raw.get("value")
         })
 
-    # ---------- MACD ----------
+    # --------------------------------------------------------
+    # MACD
+    # --------------------------------------------------------
     if ind == "macd":
-        symbol = request.args.get("symbol", "BTC/USDT")
-        interval = request.args.get("interval", "1h")
+        raw = taapi_macd(symbol=symbol, interval=interval)
+        # raw → {"macd": ..., "signal": ..., "hist": ...}
         return jsonify({
             "indicator": "macd",
-            "value": taapi_macd(symbol, interval)
-        })
-
-    # ---------- Dominance 4h ----------
-    if ind == "dominance_4h":
-        return jsonify({
-            "indicator": "dominance_4h",
-            "value": get_dominance_4h()
-        })
-
-    # ---------- Dominance 1d ----------
-    if ind == "dominance_1d":
-        return jsonify({
-            "indicator": "dominance_1d",
-            "value": get_dominance_1d()
-        })
-
-    # ---------- MVRV ----------
-    if ind == "mvrv":
-        return jsonify({
-            "indicator": "mvrv",
-            "value": calc_mvrv_z()
+            "macd": raw.get("macd"),
+            "signal": raw.get("signal"),
+            "hist": raw.get("hist")
         })
 
     return jsonify({"error": "unknown indicator"}), 400
