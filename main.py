@@ -1,12 +1,13 @@
 # main.py — Genie Server v2025.12
-# Flask + 내부 라우트 + 자동 루프 스케줄러 통합본
+# Flask + 내부 라우트 + 자동 루프 스케줄러 분리 안정판
 
-from flask import Flask
 import os
+import threading
+from flask import Flask
 
-# ────────────────────────────────
-# Blueprint Imports (라우트)
-# ────────────────────────────────
+# ────────────────────────────────────────────
+# Blueprint Routes
+# ────────────────────────────────────────────
 from routes.view_routes import view_bp
 from routes.write_routes import write_bp
 from routes.loop_routes import loop_bp
@@ -14,17 +15,28 @@ from routes.dominance_routes import bp as dominance_bp
 from routes.mvrv_routes import bp as mvrv_bp
 from routes.indicator_routes import bp as indicator_bp
 
-# 자동 루프 모듈
+# 자동 루프 모듈 (Worker에서만 실행됨)
 from app_feedback_v1_1 import start_master_loop
 
 
-# ────────────────────────────────
+# =====================================================================
+# 🚀 Worker Mode Detection
+#
+# WORKER=true → 루프 자동 실행
+# WORKER=false → 일반 Web 컨테이너 (루프 실행 금지)
+# =====================================================================
+IS_WORKER = os.getenv("WORKER", "false").lower() == "true"
+
+print(f"🔧 Genie Server Booting... WORKER Mode = {IS_WORKER}")
+
+
+# =====================================================================
 # Flask Application Factory
-# ────────────────────────────────
+# =====================================================================
 def create_app():
     app = Flask(__name__)
 
-    # Blueprint 등록
+    # 라우트 등록
     app.register_blueprint(view_bp)
     app.register_blueprint(write_bp)
     app.register_blueprint(loop_bp)
@@ -32,12 +44,12 @@ def create_app():
     app.register_blueprint(mvrv_bp)
     app.register_blueprint(indicator_bp)
 
-    # 홈 라우트
     @app.route("/")
     def home():
-        return "Genie Server v2025.12 — OK"
+        mode = "WORKER" if IS_WORKER else "WEB"
+        return f"Genie Server v2025.12 — OK ({mode})"
 
-    # 디버그 라우트
+    # 디버그용: 현재 등록된 라우트 확인
     @app.route("/debug/routes")
     def debug_routes():
         routes = []
@@ -48,31 +60,30 @@ def create_app():
     return app
 
 
-# ────────────────────────────────
-# Gunicorn / Render에서 사용할 Flask app
-# ────────────────────────────────
+# =====================================================================
+# Gunicorn이 불러갈 실제 app
+# =====================================================================
 app = create_app()
 
 
-# ────────────────────────────────
-# ★ WORKER 프로세스에서만 루프 시작
-# ────────────────────────────────
-# Render worker command에 반드시 추가:
-#   env WORKER=true python3 -m gunicorn main:app
-# Web service에는 WORKER 환경변수 없이 실행
-# ────────────────────────────────
-
-if os.getenv("WORKER", "false").lower() == "true":
-    print("🚀 WORKER detected — Starting Master Loop")
+# =====================================================================
+# 🔁 Worker 모드에서만 자동루프 실행 (절대 Web에서 실행 안 됨)
+# =====================================================================
+def start_background_loop():
+    print("🚀 Worker Thread: Genie Master Loop 시작")
     start_master_loop()
+
+
+if IS_WORKER:
+    # Worker에서만 스레드로 루프 실행
+    threading.Thread(target=start_background_loop, daemon=True).start()
+    print("🟢 Worker: Master Loop Activated")
 else:
-    print("⚠️ Not a worker process — Loop disabled")
+    print("🔵 Web: Loop Disabled (API 전용)")
 
 
-# ────────────────────────────────
-# 개발용 Standalone 실행
-# ────────────────────────────────
+# =====================================================================
+# Standalone 실행 (LOCAL 개발할 때만)
+# =====================================================================
 if __name__ == "__main__":
-    # 개발환경에서는 loop도 같이 실행하도록 설정
-    start_master_loop()
     app.run(host="0.0.0.0", port=5000)
