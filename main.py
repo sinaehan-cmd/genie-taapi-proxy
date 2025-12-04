@@ -32,6 +32,14 @@ def create_app():
     app.register_blueprint(mvrv_bp)
     app.register_blueprint(indicator_bp)
 
+@app.route("/debug/routes")
+def debug_routes():
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append(str(rule))
+    return "<br>".join(routes)
+
+    
     @app.route("/")
     def home():
         return "Genie Server v2025.12 — OK"
