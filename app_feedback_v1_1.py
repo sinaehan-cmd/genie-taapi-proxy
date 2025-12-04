@@ -4,7 +4,7 @@
 #   — New Module Structure Compatible Version
 # ======================================================
 
-import time, requests, os
+import time, requests, os, threading
 from datetime import datetime, timedelta
 
 # ─────────────────────────────────────────────
@@ -26,7 +26,7 @@ def call_genie(endpoint: str):
         res = requests.post(url, json={"access_key": GENIE_ACCESS_KEY}, timeout=20)
 
         if res.status_code == 200:
-            print(f"✅ {endpoint} OK:", res.text[:80])
+            print(f"✅ {endpoint} OK:", res.text[:120])
         else:
             print(f"⚠️ {endpoint} 실패 → {res.status_code}: {res.text}")
 
@@ -101,7 +101,7 @@ def auto_feedback_loop():
             runtime = (datetime.now() - start_time).seconds
             uptime = 100 if (datetime.now() - LAST_SUCCESS) < timedelta(hours=2) else 95
 
-            call_genie(f"system/log")
+            call_genie("system/log")
 
             LAST_SUCCESS = datetime.now()
 
@@ -120,7 +120,20 @@ def auto_feedback_loop():
 
 
 # ─────────────────────────────────────────────
-# 🚀 실행
+# 🚀 start_master_loop — Flask와 함께 실행되는 백그라운드 루프
+# ─────────────────────────────────────────────
+def start_master_loop():
+    """Flask 서버와 동시에 자동 루프를 백그라운드에서 실행"""
+    try:
+        t = threading.Thread(target=auto_feedback_loop, daemon=True)
+        t.start()
+        print("🚀 start_master_loop() — Genie Auto Feedback Loop Started")
+    except Exception as e:
+        print("❌ start_master_loop 오류:", e)
+
+
+# ─────────────────────────────────────────────
+# Standalone 실행 (개발 모드)
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
     print("🚀 Genie Autonomous Feedback v4.0 실행 시작")
