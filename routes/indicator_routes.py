@@ -9,64 +9,55 @@ from services.genie_indicator_calc import (
 
 bp = Blueprint("indicator_routes", __name__)
 
-
 @bp.route("/indicator", methods=["GET"])
 def get_indicator():
     """
-    type 파라미터에 따라 해당 지표 반환
-    예:
-      /indicator?type=rsi&symbol=BTC&interval=1h
-      /indicator?type=dominance_4h
-      /indicator?type=mvrv
+    Collector 호환:
+      /indicator?indicator=rsi&symbol=BTC/USDT&interval=1h
+      /indicator?indicator=ema&symbol=BTC/USDT&interval=1h&period=20
+      /indicator?indicator=macd&symbol=BTC/USDT&interval=1h
+
+    지니 계산:
+      /indicator?indicator=dominance_4h
+      /indicator?indicator=dominance_1d
+      /indicator?indicator=mvrv
     """
-    t = request.args.get("type")
+
+    # Collector가 주는 파라미터 이름 = indicator
+    t = request.args.get("indicator")
 
     # -------------------------
     # TAAPI 지표들
     # -------------------------
     if t == "rsi":
-        symbol = request.args.get("symbol", "BTC")
+        symbol = request.args.get("symbol", "BTC/USDT")
         interval = request.args.get("interval", "1h")
-        return jsonify({
-            "indicator": "rsi",
-            "value": taapi_rsi(symbol, interval)
-        })
+        v = taapi_rsi(symbol, interval)
+        return jsonify({"value": v})
 
     if t == "ema":
-        symbol = request.args.get("symbol", "BTC")
+        symbol = request.args.get("symbol", "BTC/USDT")
         interval = request.args.get("interval", "1h")
-        return jsonify({
-            "indicator": "ema",
-            "value": taapi_ema(symbol, interval)
-        })
+        period = request.args.get("period", 20)
+        v = taapi_ema(symbol, interval)
+        return jsonify({"value": v})
 
     if t == "macd":
-        symbol = request.args.get("symbol", "BTC")
+        symbol = request.args.get("symbol", "BTC/USDT")
         interval = request.args.get("interval", "1h")
-        return jsonify({
-            "indicator": "macd",
-            "value": taapi_macd(symbol, interval)
-        })
+        v = taapi_macd(symbol, interval)
+        return jsonify(v)
 
     # -------------------------
     # 지니 계산 지표들
     # -------------------------
     if t == "dominance_4h":
-        return jsonify({
-            "indicator": "dominance_4h",
-            "value": get_dominance_4h()
-        })
+        return jsonify({"value": get_dominance_4h()})
 
     if t == "dominance_1d":
-        return jsonify({
-            "indicator": "dominance_1d",
-            "value": get_dominance_1d()
-        })
+        return jsonify({"value": get_dominance_1d()})
 
     if t == "mvrv":
-        return jsonify({
-            "indicator": "mvrv_z",
-            "value": calc_mvrv_z()
-        })
+        return jsonify({"value": calc_mvrv_z()})
 
-    return jsonify({"error": "unknown type"}), 400
+    return jsonify({"error": "unknown indicator"}), 400
