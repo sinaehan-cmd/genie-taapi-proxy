@@ -1,0 +1,96 @@
+# loops/auto_briefing_loop.py
+# app(11).py의 /auto_loop 엔드포인트 기능 100% 복원
+
+from datetime import datetime
+import random
+from services.sheet_service import get_sheets_service, float_try
+
+
+def run_auto_briefing_loop():
+    """genie_data_v5 → genie_briefing_log 자동 브리핑 생성 루프"""
+
+    try:
+        service = get_sheets_service()
+        sheet_id = service.sheet_id
+
+        # -----------------------------------
+        # 1) genie_data_v5 최신행 읽기
+        # -----------------------------------
+        src_range = "genie_data_v5!A:Z"
+        result = service.read_range(src_range)
+        values = result.get("values", [])
+
+        if not values or len(values) < 2:
+            return {"error": "No data rows"}
+
+        headers = values[0]
+        last = values[-1]
+
+        def get_val(col):
+            if col in headers:
+                idx = headers.index(col)
+                return last[idx] if idx < len(last) else ""
+            return ""
+
+        btc_rsi = float_try(get_val("RSI(1h)"))
+        btc_price = float_try(get_val("BTC/USD"))
+        dominance = float_try(get_val("Dominance(%)"))
+        mvrv_z = float_try(get_val("MVRV_Z"))
+        fng_now = float_try(get_val("FNG"))
+        market_code = get_val("MarketCode") or "BTC_USDT"
+
+        # -----------------------------------
+        # 2) Briefing ID 생성
+        # -----------------------------------
+        now_tag = datetime.now().strftime("%Y-%m-%d-%H:%M")
+        briefing_id = f"B01.2.{random.randint(1000,9999)}.{now_tag}"
+
+        # -----------------------------------
+        # 3) Interpretation 계산
+        # -----------------------------------
+        def get_interpretation_code(rsi, dom, fng):
+            try:
+                if rsi >= 70: return "OVERHEAT"
+                if rsi <= 30: return "OVERSOLD"
+                if fng < 30 and rsi > 50: return "FEAR_BUY"
+                if rsi > 60 and dom < 55: return "BULL_PREP"
+                if rsi < 40 and dom > 55: return "BEAR_PRESSURE"
+                return "SIDEWAY"
+            except:
+                return "UNKNOWN"
+
+        interpretation = get_interpretation_code(btc_rsi, dominance, fng_now)
+        confidence = max(0, min(100, 100 - abs(50 - btc_rsi)))
+
+        meta_score = round(
+            (btc_rsi * 0.4 +
+             (100 - abs(56 - dominance)) * 0.3 +
+             (100 - abs(50 - mvrv_z)) * 0.3),
+            2
+        )
+
+        reference_key = f"C01.1.{briefing_id.split('.')[2]}.{briefing_id.split('.')[3]}"
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # -----------------------------------
+        # 4) 시트에 기록
+        # -----------------------------------
+        row_data = [[
+            briefing_id, timestamp, market_code,
+            btc_rsi, btc_price, dominance, mvrv_z,
+            interpretation, confidence, meta_score,
+            reference_key
+        ]]
+
+        service.append("genie_briefing_log!A:K", row_data)
+
+        return {
+            "result": "logged",
+            "Briefing_ID": briefing_id,
+            "Interpretation": interpretation
+        }
+
+    except Exception as e:
+        print("❌ auto_briefing_loop error:", e)
+        return {"error": str(e)}
