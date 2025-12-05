@@ -1,5 +1,5 @@
-# main.py — Genie Server v2025.12
-# Flask + 내부 라우트 + 자동 루프 스케줄러 분리 안정판
+# main.py — Genie Server v2025.12 (Stable Auto-Loop Edition)
+# Flask + Blueprints + Worker Auto Loop
 
 import os
 import threading
@@ -14,10 +14,10 @@ from routes.loop_routes import loop_bp
 from routes.dominance_routes import bp as dominance_bp
 from routes.mvrv_routes import bp as mvrv_bp
 from routes.indicator_routes import bp as indicator_bp
-from routes.loop_fix_routes import loop_fix_bp   # ✅ 루프 복원 전용 Blueprint 추가
 
-# 자동 루프 모듈 (Worker에서만 실행됨)
-from app_feedback_v1_1 import start_master_loop
+# 🔥 NEW: 새 자동 루프 시스템 (app_feedback 제거)
+from loops.master_loop import start_master_loop
+
 
 # =====================================================================
 # 🚀 Worker Mode Detection
@@ -36,7 +36,6 @@ def create_app():
     app.register_blueprint(view_bp)
     app.register_blueprint(write_bp)
     app.register_blueprint(loop_bp)
-    app.register_blueprint(loop_fix_bp)          # ✅ 루프 복원 라우트 등록
     app.register_blueprint(dominance_bp)
     app.register_blueprint(mvrv_bp)
     app.register_blueprint(indicator_bp)
@@ -46,7 +45,7 @@ def create_app():
         mode = "WORKER" if IS_WORKER else "WEB"
         return f"Genie Server v2025.12 — OK ({mode})"
 
-    # 디버그용 라우트
+    # 디버그 라우트
     @app.route("/debug/routes")
     def debug_routes():
         routes = []
@@ -79,7 +78,7 @@ else:
 
 
 # =====================================================================
-# Standalone 실행 (LOCAL 개발용)
+# LOCAL Standalone 실행
 # =====================================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
