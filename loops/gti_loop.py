@@ -1,41 +1,33 @@
-from services.google_sheets import read_sheet, append_row
+# loops/gti_loop.py
+
+import traceback
 import datetime
+from services.gti_service import run_gti_core
+
 
 def run_gti_loop():
-    pred = read_sheet("genie_predictions")
+    """
+    GTI 루프 실행
+    - app(11).py 기준 GTI 갱신 기능 복원
+    """
+    start = datetime.datetime.now()
+    result = {
+        "event": "gti_loop",
+        "start": str(start)
+    }
 
-    if len(pred) < 3:
-        return "Not enough prediction data"
+    try:
+        core_res = run_gti_core()
+        result["core"] = core_res
+        result["status"] = "success"
 
-    deviations = []
-    for row in pred[-10:]:
-        if row[10]:  # Actual_Price
-            try:
-                p = float(row[4])
-                a = float(row[10])
-                dev = abs(a - p) / p * 100
-                deviations.append(dev)
-            except:
-                pass
+    except Exception as e:
+        result["status"] = "error"
+        result["message"] = str(e)
+        result["trace"] = traceback.format_exc()
 
-    if len(deviations) == 0:
-        return "No deviation data"
+    end = datetime.datetime.now()
+    result["end"] = str(end)
+    result["duration_sec"] = (end - start).total_seconds()
 
-    avg_dev = sum(deviations) / len(deviations)
-    gti_score = max(0, 100 - avg_dev)
-
-    row = [
-        f"GTI-{datetime.datetime.now().timestamp()}",
-        datetime.datetime.now().isoformat(),
-        "1h",
-        len(deviations),
-        round(avg_dev, 3),
-        round(gti_score, 2),
-        "simple_gti",
-        "auto",
-        "NEUTRAL",
-        "",
-    ]
-    append_row("genie_gti_log", row)
-    return "GTI updated"
-
+    return result
