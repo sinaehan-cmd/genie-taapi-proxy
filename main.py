@@ -14,6 +14,7 @@ from routes.loop_routes import loop_bp
 from routes.dominance_routes import bp as dominance_bp
 from routes.mvrv_routes import bp as mvrv_bp
 from routes.indicator_routes import bp as indicator_bp
+from routes.loop_fix_routes import loop_fix_bp
 
 # 자동 루프 모듈 (Worker에서만 실행됨)
 from app_feedback_v1_1 import start_master_loop
