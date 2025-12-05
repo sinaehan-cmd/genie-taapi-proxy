@@ -14,20 +14,15 @@ from routes.loop_routes import loop_bp
 from routes.dominance_routes import bp as dominance_bp
 from routes.mvrv_routes import bp as mvrv_bp
 from routes.indicator_routes import bp as indicator_bp
-from routes.loop_fix_routes import loop_fix_bp
+from routes.loop_fix_routes import loop_fix_bp   # ✅ 루프 복원 전용 Blueprint 추가
 
 # 자동 루프 모듈 (Worker에서만 실행됨)
 from app_feedback_v1_1 import start_master_loop
 
-
 # =====================================================================
 # 🚀 Worker Mode Detection
-#
-# WORKER=true → 루프 자동 실행
-# WORKER=false → 일반 Web 컨테이너 (루프 실행 금지)
 # =====================================================================
 IS_WORKER = os.getenv("WORKER", "false").lower() == "true"
-
 print(f"🔧 Genie Server Booting... WORKER Mode = {IS_WORKER}")
 
 
@@ -41,6 +36,7 @@ def create_app():
     app.register_blueprint(view_bp)
     app.register_blueprint(write_bp)
     app.register_blueprint(loop_bp)
+    app.register_blueprint(loop_fix_bp)          # ✅ 루프 복원 라우트 등록
     app.register_blueprint(dominance_bp)
     app.register_blueprint(mvrv_bp)
     app.register_blueprint(indicator_bp)
@@ -50,7 +46,7 @@ def create_app():
         mode = "WORKER" if IS_WORKER else "WEB"
         return f"Genie Server v2025.12 — OK ({mode})"
 
-    # 디버그용: 현재 등록된 라우트 확인
+    # 디버그용 라우트
     @app.route("/debug/routes")
     def debug_routes():
         routes = []
@@ -68,7 +64,7 @@ app = create_app()
 
 
 # =====================================================================
-# 🔁 Worker 모드에서만 자동루프 실행 (절대 Web에서 실행 안 됨)
+# 🔁 Worker 모드 자동 루프 실행
 # =====================================================================
 def start_background_loop():
     print("🚀 Worker Thread: Genie Master Loop 시작")
@@ -76,7 +72,6 @@ def start_background_loop():
 
 
 if IS_WORKER:
-    # Worker에서만 스레드로 루프 실행
     threading.Thread(target=start_background_loop, daemon=True).start()
     print("🟢 Worker: Master Loop Activated")
 else:
@@ -84,7 +79,7 @@ else:
 
 
 # =====================================================================
-# Standalone 실행 (LOCAL 개발할 때만)
+# Standalone 실행 (LOCAL 개발용)
 # =====================================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
