@@ -2,7 +2,7 @@
 # app(11).py의 prediction_loop 로직 100% 복원 서비스 버전
 
 from datetime import datetime, timedelta
-from services.sheet_service import get_sheets_service, float_try
+from services.sheet_service import get_sheet_service, float_try   # ← 여기 수정
 
 
 def run_prediction_core():
@@ -12,7 +12,7 @@ def run_prediction_core():
     - genie_predictions 시트에 한 줄 기록
     """
     try:
-        service = get_sheets_service()
+        service = get_sheet_service()   # ← 여기 수정
         sheet_id = service.sheet_id
 
         # -----------------------------------
