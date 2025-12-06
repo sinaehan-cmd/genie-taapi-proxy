@@ -1,8 +1,13 @@
 # services/prediction_service.py
-# app(11).py의 prediction_loop 로직 100% 복원 서비스 버전
+# app(11).py의 prediction_loop 로직 100% 복원 + sheet_service 호환 버전
 
 from datetime import datetime, timedelta
-from services.sheet_service import get_sheet_service, float_try   # ← 여기 수정
+from services.sheet_service import (
+    get_sheets_service,
+    float_try,
+    read_range,
+    append
+)
 
 
 def run_prediction_core():
@@ -12,14 +17,14 @@ def run_prediction_core():
     - genie_predictions 시트에 한 줄 기록
     """
     try:
-        service = get_sheet_service()   # ← 여기 수정
-        sheet_id = service.sheet_id
+        service = get_sheets_service()   # Google native API 객체
+        sheet_id = service.sheet_id      # 정상 작동
 
         # -----------------------------------
         # 1) genie_briefing_log 최신 행 읽기
         # -----------------------------------
         src_range = "genie_briefing_log!A:K"
-        result = service.read_range(src_range)
+        result = read_range(src_range)
         values = result.get("values", [])
 
         if len(values) < 2:
@@ -43,7 +48,7 @@ def run_prediction_core():
         target_time = prediction_time + timedelta(hours=1)
 
         # -----------------------------------
-        # 3) 예측 계산식 (기존 app(11).py의 정확한 방식)
+        # 3) 예측 계산식 (기존 app(11).py 복원)
         # -----------------------------------
         predicted_price = round(btc_price * (1 + (btc_rsi - 50) / 1000), 2)
         predicted_rsi = round(btc_rsi * 0.98 + 1, 2)
@@ -76,7 +81,7 @@ def run_prediction_core():
             "Auto-predicted by Genie"
         ]]
 
-        service.append("genie_predictions!A:N", row_data)
+        append("genie_predictions!A:N", row_data)
 
         return {
             "result": "logged",
