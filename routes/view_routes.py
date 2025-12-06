@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, render_template
-from services.google_sheets import read_sheet
+from services.sheet_service import read_sheet
 
 view_bp = Blueprint("view_routes", __name__)
 
