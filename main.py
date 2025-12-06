@@ -3,7 +3,7 @@
 
 import os
 import threading
-from flask import Flask
+from flask import Flask, jsonify
 
 # ────────────────────────────────────────────
 # Blueprint Routes
@@ -15,10 +15,8 @@ from routes.dominance_routes import bp as dominance_bp
 from routes.mvrv_routes import bp as mvrv_bp
 from routes.indicator_routes import bp as indicator_bp
 
-# 🔥 NEW: 새 자동 루프 시스템 (app_feedback 제거)
+# 🔥 NEW: Master Loop (자동 루프)
 from loops.master_loop import start_master_loop
-
-from flask import jsonify
 
 
 # =====================================================================
@@ -47,12 +45,9 @@ def create_app():
         mode = "WORKER" if IS_WORKER else "WEB"
         return f"Genie Server v2025.12 — OK ({mode})"
 
-    # 디버그 라우트
     @app.route("/debug/routes")
     def debug_routes():
-        routes = []
-        for rule in app.url_map.iter_rules():
-            routes.append(str(rule))
+        routes = [str(rule) for rule in app.url_map.iter_rules()]
         return "<br>".join(routes)
 
     return app
@@ -79,8 +74,11 @@ else:
     print("🔵 Web: Loop Disabled (API 전용)")
 
 
- @app.route("/health", methods=["GET"])
-  def health():
+# =====================================================================
+# ✅ Health Check Endpoint
+# =====================================================================
+@app.route("/health", methods=["GET"])
+def health():
     return jsonify({"status": "ok"}), 200
 
 
