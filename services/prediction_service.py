@@ -3,12 +3,11 @@
 
 from datetime import datetime, timedelta
 from services.sheet_service import (
-    get_sheets_service,
+    get_sheet_service,   # ✅ 수정 완료
     float_try,
     read_range,
     append
 )
-
 
 def run_prediction_core():
     """
@@ -17,8 +16,8 @@ def run_prediction_core():
     - genie_predictions 시트에 한 줄 기록
     """
     try:
-        service = get_sheets_service()   # Google native API 객체
-        sheet_id = service.sheet_id      # 정상 작동
+        # Google native API 객체
+        service = get_sheet_service()
 
         # -----------------------------------
         # 1) genie_briefing_log 최신 행 읽기
@@ -75,8 +74,8 @@ def run_prediction_core():
             "LinearDelta(v1.1)",
             "AUTO",
             confidence,
-            "",      # Actual Price (empty)
-            "",      # Deviation (empty)
+            "",      # Actual Price
+            "",      # Deviation
             ref_id,  # Reference briefing ID
             "Auto-predicted by Genie"
         ]]
