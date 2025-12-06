@@ -1,19 +1,13 @@
-# services/sheet_service.py
-# Genie OS – Unified Google Sheets Service (Stable v2.0)
-
 import os
 import json
 import base64
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 
-# ------------------------------------------------------------
-# 환경변수
-# ------------------------------------------------------------
 SHEET_ID = os.getenv("SHEET_ID")
 
 # ------------------------------------------------------------
-# 숫자 변환
+# 안전한 float 변환
 # ------------------------------------------------------------
 def float_try(v):
     try:
@@ -23,11 +17,20 @@ def float_try(v):
 
 
 # ------------------------------------------------------------
-# Lazy Singleton Sheets client
+# 기존 네 구조: get_sheet_service() 유지
 # ------------------------------------------------------------
-_service = None
+_service_cache = None
 
-def _build_service():
+def get_sheet_service():
+    """
+    기존 프로젝트 전체에서 사용하던 함수
+    - get_sheet_service 그대로 유지
+    - 내부 구조만 최신화
+    """
+    global _service_cache
+    if _service_cache is not None:
+        return _service_cache
+
     raw = os.getenv("GOOGLE_SERVICE_ACCOUNT")
     if not raw:
         raise Exception("❌ GOOGLE_SERVICE_ACCOUNT 환경변수 없음")
@@ -39,44 +42,35 @@ def _build_service():
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
 
-    return build("sheets", "v4", credentials=creds).spreadsheets()
+    service = build("sheets", "v4", credentials=creds)
+    _service_cache = service.spreadsheets()
 
+    # ✔ 네가 쓰던 패턴과 동일하게 attrs 추가
+    _service_cache.sheet_id = SHEET_ID
+    _service_cache.values = _service_cache.values()
 
-def get_sheets():
-    global _service
-    if _service is None:
-        _service = _build_service()
-    return _service
+    return _service_cache
 
 
 # ------------------------------------------------------------
 # READ
 # ------------------------------------------------------------
-
 def read_sheet(sheet_name):
-    """
-    예: read_sheet("genie_data_v5")
-    """
-    service = get_sheets()
+    service = get_sheet_service()
     rng = f"{sheet_name}!A:Z"
 
-    res = service.values().get(
-        spreadsheetId=SHEET_ID,
-        range=rng
+    res = service.values.get(
+        spreadsheetId=SHEET_ID, range=rng
     ).execute()
 
     return res.get("values", [])
 
 
 def read_range(range_str):
-    """
-    예: read_range("genie_predictions!A:N")
-    """
-    service = get_sheets()
+    service = get_sheet_service()
 
-    res = service.values().get(
-        spreadsheetId=SHEET_ID,
-        range=range_str
+    res = service.values.get(
+        spreadsheetId=SHEET_ID, range=range_str
     ).execute()
 
     return res
@@ -85,69 +79,60 @@ def read_range(range_str):
 # ------------------------------------------------------------
 # APPEND
 # ------------------------------------------------------------
+def append_row(sheet_name_or_range, row):
+    service = get_sheet_service()
 
-def append_row(sheet_or_range, row):
-    """
-    예: append_row("genie_predictions", [...])
-    """
-    service = get_sheets()
-
-    # sheetName → sheetName!A:Z 자동 변환
-    if "!A" not in sheet_or_range:
-        rng = f"{sheet_or_range}!A:Z"
+    if "!A" not in sheet_name_or_range:
+        rng = f"{sheet_name_or_range}!A:Z"
     else:
-        rng = sheet_or_range
+        rng = sheet_name_or_range
 
-    return service.values().append(
+    body = {"values": [row]}
+
+    return service.values.append(
         spreadsheetId=SHEET_ID,
         range=rng,
         valueInputOption="USER_ENTERED",
-        body={"values": [row]}
+        body=body
     ).execute()
 
 
 def append(range_str, values):
-    """
-    예: append("genie_predictions!A:N", [[...], [...]])
-    """
-    service = get_sheets()
+    service = get_sheet_service()
+    body = {"values": values}
 
-    return service.values().append(
+    return service.values.append(
         spreadsheetId=SHEET_ID,
         range=range_str,
         valueInputOption="USER_ENTERED",
-        body={"values": values}
+        body=body
     ).execute()
 
 
 # ------------------------------------------------------------
 # WRITE
 # ------------------------------------------------------------
-
 def write_row(sheet_name, row_index, values):
-    """
-    예: write_row("genie_predictions", 10, [...])
-    """
-    service = get_sheets()
+    service = get_sheet_service()
     rng = f"{sheet_name}!A{row_index}"
 
-    return service.values().update(
+    body = {"values": [values]}
+
+    return service.values.update(
         spreadsheetId=SHEET_ID,
         range=rng,
         valueInputOption="USER_ENTERED",
-        body={"values": [values]}
+        body=body
     ).execute()
 
 
 def write(range_str, values):
-    """
-    예: write("genie_predictions!D10", [[123]])
-    """
-    service = get_sheets()
+    service = get_sheet_service()
+    body = {"values": values}
 
-    return service.values().update(
+    return service.values.update(
         spreadsheetId=SHEET_ID,
         range=range_str,
         valueInputOption="USER_ENTERED",
-        body={"values": values}
+        body=body
     ).execute()
