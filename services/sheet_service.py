@@ -1,3 +1,6 @@
+# services/sheet_service.py
+# unified sheet service — compatible with all Genie loops
+
 import os
 import json
 import base64
@@ -6,27 +9,27 @@ from google.oauth2 import service_account
 
 SHEET_ID = os.getenv("SHEET_ID")
 
-# ------------------------------------------------------------
-# 안전한 float 변환
-# ------------------------------------------------------------
+# ============================================================
+# FLOAT 변환
+# ============================================================
+
 def float_try(v):
     try:
         return float(v)
-    except:
+    except Exception:
         return None
 
 
-# ------------------------------------------------------------
-# 기존 네 구조: get_sheet_service() 유지
-# ------------------------------------------------------------
+# ============================================================
+# Google Sheets 서비스 생성 (Lazy Singleton)
+#  - 내부용: _get_raw_service()
+#  - 외부용: get_sheet_service / get_sheets_service (둘 다 지원)
+# ============================================================
+
 _service_cache = None
 
-def get_sheet_service():
-    """
-    기존 프로젝트 전체에서 사용하던 함수
-    - get_sheet_service 그대로 유지
-    - 내부 구조만 최신화
-    """
+def _get_raw_service():
+    """실제 google sheets service.spreadsheets() 객체 생성"""
     global _service_cache
     if _service_cache is not None:
         return _service_cache
@@ -44,43 +47,62 @@ def get_sheet_service():
 
     service = build("sheets", "v4", credentials=creds)
     _service_cache = service.spreadsheets()
-
-    # ✔ 네가 쓰던 패턴과 동일하게 attrs 추가
-    _service_cache.sheet_id = SHEET_ID
-    _service_cache.values = _service_cache.values()
-
     return _service_cache
 
 
-# ------------------------------------------------------------
-# READ
-# ------------------------------------------------------------
-def read_sheet(sheet_name):
-    service = get_sheet_service()
+# 🔹 옛 코드 호환: 둘 다 같은 걸 리턴하도록 alias 제공
+
+def get_sheet_service():
+    """신규 표준 이름"""
+    return _get_raw_service()
+
+def get_sheets_service():
+    """옛 이름 호환용"""
+    return _get_raw_service()
+
+
+# ============================================================
+# READ RANGE
+# ============================================================
+
+def read_sheet(sheet_name: str):
+    """
+    예: read_sheet("genie_data_v5")
+    → [["헤더1", ...], ["값1", ...], ...]
+    """
+    service = _get_raw_service()
     rng = f"{sheet_name}!A:Z"
-
-    res = service.values.get(
-        spreadsheetId=SHEET_ID, range=rng
+    res = service.values().get(
+        spreadsheetId=SHEET_ID,
+        range=rng
     ).execute()
-
     return res.get("values", [])
 
 
-def read_range(range_str):
-    service = get_sheet_service()
-
-    res = service.values.get(
-        spreadsheetId=SHEET_ID, range=range_str
+def read_range(range_str: str):
+    """
+    예: read_range("genie_briefing_log!A:K")
+    → {"range": ..., "values": [...]}
+    """
+    service = _get_raw_service()
+    res = service.values().get(
+        spreadsheetId=SHEET_ID,
+        range=range_str
     ).execute()
-
     return res
 
 
-# ------------------------------------------------------------
-# APPEND
-# ------------------------------------------------------------
-def append_row(sheet_name_or_range, row):
-    service = get_sheet_service()
+# ============================================================
+# APPEND (행 추가)
+# ============================================================
+
+def append_row(sheet_name_or_range: str, row: list):
+    """
+    예:
+      append_row("genie_predictions", [...])
+      append_row("genie_predictions!A:N", [...])
+    """
+    service = _get_raw_service()
 
     if "!A" not in sheet_name_or_range:
         rng = f"{sheet_name_or_range}!A:Z"
@@ -89,7 +111,7 @@ def append_row(sheet_name_or_range, row):
 
     body = {"values": [row]}
 
-    return service.values.append(
+    return service.values().append(
         spreadsheetId=SHEET_ID,
         range=rng,
         valueInputOption="USER_ENTERED",
@@ -97,11 +119,16 @@ def append_row(sheet_name_or_range, row):
     ).execute()
 
 
-def append(range_str, values):
-    service = get_sheet_service()
+def append(range_str: str, values: list):
+    """
+    예:
+      rows = [[...], [...]]
+      append("genie_gti_log!A:J", rows)
+    """
+    service = _get_raw_service()
     body = {"values": values}
 
-    return service.values.append(
+    return service.values().append(
         spreadsheetId=SHEET_ID,
         range=range_str,
         valueInputOption="USER_ENTERED",
@@ -109,16 +136,19 @@ def append(range_str, values):
     ).execute()
 
 
-# ------------------------------------------------------------
-# WRITE
-# ------------------------------------------------------------
-def write_row(sheet_name, row_index, values):
-    service = get_sheet_service()
-    rng = f"{sheet_name}!A{row_index}"
+# ============================================================
+# WRITE (특정 row overwrite)
+# ============================================================
 
+def write_row(sheet_name: str, row_index: int, values: list):
+    """
+    예: write_row("genie_data_v5", 10, [...])
+    """
+    service = _get_raw_service()
+    rng = f"{sheet_name}!A{row_index}"
     body = {"values": [values]}
 
-    return service.values.update(
+    return service.values().update(
         spreadsheetId=SHEET_ID,
         range=rng,
         valueInputOption="USER_ENTERED",
@@ -126,11 +156,14 @@ def write_row(sheet_name, row_index, values):
     ).execute()
 
 
-def write(range_str, values):
-    service = get_sheet_service()
+def write(range_str: str, values: list):
+    """
+    예: write("genie_data_v5!A2:Z2", [[...]])
+    """
+    service = _get_raw_service()
     body = {"values": values}
 
-    return service.values.update(
+    return service.values().update(
         spreadsheetId=SHEET_ID,
         range=range_str,
         valueInputOption="USER_ENTERED",
