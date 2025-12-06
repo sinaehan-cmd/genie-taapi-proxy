@@ -1,26 +1,41 @@
 # services/system_log_service.py
-# System Log Core — app(11).py 기반 복원
+# Genie System Log — v9.3 완전 호환 버전
 
 import datetime
-from services.sheet_service import append_row
+from services.sheet_service import append, read_range
 
 
-def run_system_log_core(status="OK", message=None):
+def run_system_log_core(status="OK", message=""):
     """
     시스템 상태 기록
-    - 자동 루프가 끝날 때마다 실행
+    - 루프 실행 후 상태를 genie_system_log 시트에 기록
     """
+
+    # --------------------------
+    # 1) Timestamp
+    # --------------------------
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    record = {
-        "Timestamp": now,
-        "Worker_Status": status,
-        "Message": message or "",
-    }
+    # --------------------------
+    # 2) 헤더 확인 & 자동 생성
+    # --------------------------
+    rows = read_range("genie_system_log!A:C").get("values", [])
+    if not rows:
+        # 헤더 생성
+        append("genie_system_log!A:C", [[
+            "Timestamp", "Worker_Status", "Message"
+        ]])
 
-    append_row("genie_system_log", record)
+    # --------------------------
+    # 3) 기록 데이터 구성
+    # --------------------------
+    row = [[now, status, message]]
+
+    append("genie_system_log!A:C", row)
 
     return {
-        "status": "success",
-        "recorded": record
+        "status": "logged",
+        "timestamp": now,
+        "worker_status": status,
+        "message": message
     }
