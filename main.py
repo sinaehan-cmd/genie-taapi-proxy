@@ -18,6 +18,8 @@ from routes.indicator_routes import bp as indicator_bp
 # 🔥 NEW: 새 자동 루프 시스템 (app_feedback 제거)
 from loops.master_loop import start_master_loop
 
+from flask import jsonify
+
 
 # =====================================================================
 # 🚀 Worker Mode Detection
@@ -75,6 +77,11 @@ if IS_WORKER:
     print("🟢 Worker: Master Loop Activated")
 else:
     print("🔵 Web: Loop Disabled (API 전용)")
+
+
+ @app.route("/health", methods=["GET"])
+  def health():
+    return jsonify({"status": "ok"}), 200
 
 
 # =====================================================================
