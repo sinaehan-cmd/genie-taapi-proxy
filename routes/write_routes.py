@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from services.google_sheets import append_row
+from services.sheet_service import append_row
 from services.genie_indicator_calc import record_values   # ★ 지니 계산 모듈
 import datetime
 
