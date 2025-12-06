@@ -1,5 +1,5 @@
 # services/sheet_service.py
-# Genie Loop Compatible Version (100% 루프 호환 복구판)
+# Genie OS – Unified Google Sheets Service (Stable v2.0)
 
 import os
 import json
@@ -7,13 +7,14 @@ import base64
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 
-
+# ------------------------------------------------------------
+# 환경변수
+# ------------------------------------------------------------
 SHEET_ID = os.getenv("SHEET_ID")
 
-
-# ============================================================
-# FLOAT 변환
-# ============================================================
+# ------------------------------------------------------------
+# 숫자 변환
+# ------------------------------------------------------------
 def float_try(v):
     try:
         return float(v)
@@ -21,84 +22,12 @@ def float_try(v):
         return None
 
 
-# ============================================================
-# Google Sheet Wrapper (루프 호환 클래스)
-# ============================================================
-class GenieSheet:
-    def __init__(self, sheet_id, service):
-        self.sheet_id = sheet_id
-        self.service = service
+# ------------------------------------------------------------
+# Lazy Singleton Sheets client
+# ------------------------------------------------------------
+_service = None
 
-    # ---- read_range ----
-    def read_range(self, range_str):
-        res = self.service.values().get(
-            spreadsheetId=self.sheet_id,
-            range=range_str
-        ).execute()
-        return res
-
-    # ---- append ----
-    def append(self, range_str, values):
-        body = {"values": values}
-        return self.service.values().append(
-            spreadsheetId=self.sheet_id,
-            range=range_str,
-            valueInputOption="USER_ENTERED",
-            body=body
-        ).execute()
-
-    # ---- append_row ----
-    def append_row(self, sheet_name_or_range, row):
-        if "!A" not in sheet_name_or_range:
-            rng = f"{sheet_name_or_range}!A:Z"
-        else:
-            rng = sheet_name_or_range
-
-        body = {"values": [row]}
-        return self.service.values().append(
-            spreadsheetId=self.sheet_id,
-            range=rng,
-            valueInputOption="USER_ENTERED",
-            body=body
-        ).execute()
-
-    # ---- write ----
-    def write(self, range_str, values):
-        body = {"values": values}
-        return self.service.values().update(
-            spreadsheetId=self.sheet_id,
-            range=range_str,
-            valueInputOption="USER_ENTERED",
-            body=body
-        ).execute()
-
-    # ---- write_row ----
-    def write_row(self, sheet_name, row_index, values):
-        rng = f"{sheet_name}!A{row_index}"
-        body = {"values": [values]}
-
-        return self.service.values().update(
-            spreadsheetId=self.sheet_id,
-            range=rng,
-            valueInputOption="USER_ENTERED",
-            body=body
-        ).execute()
-
-
-# ============================================================
-# Lazy Singleton
-# ============================================================
-_service_cache = None
-
-
-def get_sheets_service():
-    """
-    Google Sheets API + GenieSheet wrapper 반환 (루프 100% 호환).
-    """
-    global _service_cache
-    if _service_cache is not None:
-        return _service_cache
-
+def _build_service():
     raw = os.getenv("GOOGLE_SERVICE_ACCOUNT")
     if not raw:
         raise Exception("❌ GOOGLE_SERVICE_ACCOUNT 환경변수 없음")
@@ -110,8 +39,115 @@ def get_sheets_service():
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
 
-    api = build("sheets", "v4", credentials=creds).spreadsheets()
-    wrapper = GenieSheet(SHEET_ID, api)
+    return build("sheets", "v4", credentials=creds).spreadsheets()
 
-    _service_cache = wrapper
-    return wrapper
+
+def get_sheets():
+    global _service
+    if _service is None:
+        _service = _build_service()
+    return _service
+
+
+# ------------------------------------------------------------
+# READ
+# ------------------------------------------------------------
+
+def read_sheet(sheet_name):
+    """
+    예: read_sheet("genie_data_v5")
+    """
+    service = get_sheets()
+    rng = f"{sheet_name}!A:Z"
+
+    res = service.values().get(
+        spreadsheetId=SHEET_ID,
+        range=rng
+    ).execute()
+
+    return res.get("values", [])
+
+
+def read_range(range_str):
+    """
+    예: read_range("genie_predictions!A:N")
+    """
+    service = get_sheets()
+
+    res = service.values().get(
+        spreadsheetId=SHEET_ID,
+        range=range_str
+    ).execute()
+
+    return res
+
+
+# ------------------------------------------------------------
+# APPEND
+# ------------------------------------------------------------
+
+def append_row(sheet_or_range, row):
+    """
+    예: append_row("genie_predictions", [...])
+    """
+    service = get_sheets()
+
+    # sheetName → sheetName!A:Z 자동 변환
+    if "!A" not in sheet_or_range:
+        rng = f"{sheet_or_range}!A:Z"
+    else:
+        rng = sheet_or_range
+
+    return service.values().append(
+        spreadsheetId=SHEET_ID,
+        range=rng,
+        valueInputOption="USER_ENTERED",
+        body={"values": [row]}
+    ).execute()
+
+
+def append(range_str, values):
+    """
+    예: append("genie_predictions!A:N", [[...], [...]])
+    """
+    service = get_sheets()
+
+    return service.values().append(
+        spreadsheetId=SHEET_ID,
+        range=range_str,
+        valueInputOption="USER_ENTERED",
+        body={"values": values}
+    ).execute()
+
+
+# ------------------------------------------------------------
+# WRITE
+# ------------------------------------------------------------
+
+def write_row(sheet_name, row_index, values):
+    """
+    예: write_row("genie_predictions", 10, [...])
+    """
+    service = get_sheets()
+    rng = f"{sheet_name}!A{row_index}"
+
+    return service.values().update(
+        spreadsheetId=SHEET_ID,
+        range=rng,
+        valueInputOption="USER_ENTERED",
+        body={"values": [values]}
+    ).execute()
+
+
+def write(range_str, values):
+    """
+    예: write("genie_predictions!D10", [[123]])
+    """
+    service = get_sheets()
+
+    return service.values().update(
+        spreadsheetId=SHEET_ID,
+        range=range_str,
+        valueInputOption="USER_ENTERED",
+        body={"values": values}
+    ).execute()
