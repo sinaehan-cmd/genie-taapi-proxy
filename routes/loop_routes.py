@@ -11,10 +11,14 @@ from loops.learning_loop import run_learning_loop
 from loops.auto_gti_loop import run_auto_gti_loop
 from loops.system_log_loop import run_system_log_loop
 
+# ⭐ 브리핑 루프 (추가)
+from loops.auto_briefing_loop import run_auto_briefing_loop
+
 # 전체 자동 루프
 from loops.auto_loop import run_auto_loop
 
 loop_bp = Blueprint("loop_routes", __name__)
+
 
 # -----------------------------
 # 개별 루프 실행
@@ -23,25 +27,41 @@ loop_bp = Blueprint("loop_routes", __name__)
 def run_reader():
     return jsonify(run_reader_loop())
 
+
 @loop_bp.route("/run/prediction")
 def run_prediction():
     return jsonify(run_prediction_loop())
+
 
 @loop_bp.route("/run/gti")
 def run_gti():
     return jsonify(run_gti_loop())
 
+
 @loop_bp.route("/run/learning")
 def run_learning():
     return jsonify(run_learning_loop())
+
 
 @loop_bp.route("/run/system_log")
 def run_system_log():
     return jsonify(run_system_log_loop())
 
+
 @loop_bp.route("/run/auto_gti")
 def run_auto_gti():
     return jsonify(run_auto_gti_loop())
+
+
+# -----------------------------
+# ⭐ 브리핑 루프 (신규)
+# -----------------------------
+@loop_bp.route("/run/auto_briefing")
+def run_auto_briefing():
+    """
+    genie_data_v5 → genie_briefing_log 자동 브리핑 기록
+    """
+    return jsonify(run_auto_briefing_loop())
 
 
 # -----------------------------
@@ -52,10 +72,11 @@ def run_auto():
     """
     전체 자동 루프 구성:
       1) Reader
-      2) Prediction
-      3) GTI
-      4) Learning
-      5) AutoGTI
-      6) SystemLog
+      2) Auto Briefing   ⭐ 추가됨
+      3) Prediction
+      4) GTI
+      5) Learning
+      6) AutoGTI
+      7) SystemLog
     """
     return jsonify(run_auto_loop())
