@@ -16,8 +16,8 @@ def write():
 
     # -----------------------------------------
     # 1) (구버전) record_values 제거됨
-    #     - genie_indicator_calc.py는 현재 시스템에서 사용 안 함
-    #     - dominance/btc_price는 market_service에서 수집됨
+    #    - genie_indicator_calc.py는 현재 시스템에서 사용 안 함
+    #    - dominance/btc_price는 market_service에서 수집됨
     # -----------------------------------------
 
     # -----------------------------------------
