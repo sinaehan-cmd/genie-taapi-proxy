@@ -1,12 +1,24 @@
+# routes/loop_routes.py
+# Genie Loop Routes v2025.12 Stable
+
 from flask import Blueprint, jsonify
 
+# -----------------------------
+# 개별 루프
+# -----------------------------
 from loops.prediction_loop import run_prediction_loop
 from loops.gti_loop import run_gti_loop
 from loops.learning_loop import run_learning_loop
 from loops.reader_loop import run_reader_loop
 from loops.system_log_loop import run_system_log_loop
 from loops.auto_gti_loop import run_auto_gti_loop
-from loops.auto_loop import run_auto_loop   # ⭐ 전체 루프 추가
+
+# ⭐ NEW: Auto-Briefing Loop 추가
+from loops.auto_briefing_loop import run_auto_briefing_loop
+
+# ⭐ 전체 루프
+from loops.auto_loop import run_auto_loop
+
 
 loop_bp = Blueprint("loop_routes", __name__)
 
@@ -45,11 +57,19 @@ def run_auto_gti():
 
 
 # -----------------------------
-# ⭐ 전체 자동 루프 — 핵심복원
+# ⭐ Auto-Briefing (신규)
+# -----------------------------
+@loop_bp.route("/run/auto_briefing")
+def run_auto_briefing():
+    return jsonify(run_auto_briefing_loop())
+
+
+# -----------------------------
+# ⭐ 전체 자동 루프
 # -----------------------------
 @loop_bp.route("/run/auto")
 def run_auto():
     """
-    Reader → Prediction → GTI → Learning → AutoGTI → SystemLog
+    Auto-Briefing → Reader → Prediction → GTI → Learning → AutoGTI → SystemLog
     """
     return jsonify(run_auto_loop())
