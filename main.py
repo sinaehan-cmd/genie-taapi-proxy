@@ -15,6 +15,9 @@ from routes.dominance_routes import bp as dominance_bp
 from routes.mvrv_routes import bp as mvrv_bp
 from routes.indicator_routes import bp as indicator_bp
 
+# 🆕 추가: Upbit API 테스트 라우터
+from routes.upbit_routes import upbit_bp
+
 # 🔥 NEW: Master Loop (자동 루프)
 from loops.master_loop import start_master_loop
 
@@ -39,6 +42,7 @@ def create_app():
     app.register_blueprint(dominance_bp)
     app.register_blueprint(mvrv_bp)
     app.register_blueprint(indicator_bp)
+    app.register_blueprint(upbit_bp)  # 🆕 업비트 라우터 등록
 
     @app.route("/")
     def home():
@@ -68,6 +72,7 @@ def start_background_loop():
 
 
 if IS_WORKER:
+    # Thread는 한 번만 실행되도록 daemon=True 설정
     threading.Thread(target=start_background_loop, daemon=True).start()
     print("🟢 Worker: Master Loop Activated")
 else:
