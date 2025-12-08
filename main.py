@@ -5,9 +5,9 @@ import os
 import threading
 from flask import Flask, jsonify
 
-# ────────────────────────────────────────────
+# ───────────────────────────────────────────
 # Blueprint Routes
-# ────────────────────────────────────────────
+# ───────────────────────────────────────────
 from routes.view_routes import view_bp
 from routes.write_routes import write_bp
 from routes.loop_routes import loop_bp
@@ -15,10 +15,10 @@ from routes.dominance_routes import bp as dominance_bp
 from routes.mvrv_routes import bp as mvrv_bp
 from routes.indicator_routes import bp as indicator_bp
 
-# 🆕 추가: Upbit API 테스트 라우터
+# 🆕 Upbit API 라우터
 from routes.upbit_routes import upbit_bp
 
-# 🔥 NEW: Master Loop (자동 루프)
+# 🔥 Master Loop (자동 루프)
 from loops.master_loop import start_master_loop
 
 
@@ -35,14 +35,14 @@ print(f"🔧 Genie Server Booting... WORKER Mode = {IS_WORKER}")
 def create_app():
     app = Flask(__name__)
 
-    # 라우트 등록
+    # 🔹 라우트 등록
     app.register_blueprint(view_bp)
     app.register_blueprint(write_bp)
     app.register_blueprint(loop_bp)
     app.register_blueprint(dominance_bp)
     app.register_blueprint(mvrv_bp)
     app.register_blueprint(indicator_bp)
-    app.register_blueprint(upbit_bp)  # 🆕 업비트 라우터 등록
+    app.register_blueprint(upbit_bp)   # 🆕 업비트 라우터 등록
 
     @app.route("/")
     def home():
@@ -58,7 +58,7 @@ def create_app():
 
 
 # =====================================================================
-# Gunicorn이 불러갈 실제 app
+# Gunicorn이 불러가는 실제 app
 # =====================================================================
 app = create_app()
 
@@ -68,11 +68,14 @@ app = create_app()
 # =====================================================================
 def start_background_loop():
     print("🚀 Worker Thread: Genie Master Loop 시작")
-    start_master_loop()
+    try:
+        start_master_loop()
+    except Exception as e:
+        print("❌ Master Loop crashed:", e)
 
 
 if IS_WORKER:
-    # Thread는 한 번만 실행되도록 daemon=True 설정
+    # Worker 모드에서만 실행
     threading.Thread(target=start_background_loop, daemon=True).start()
     print("🟢 Worker: Master Loop Activated")
 else:
@@ -80,7 +83,7 @@ else:
 
 
 # =====================================================================
-# ✅ Health Check Endpoint
+# Health Check
 # =====================================================================
 @app.route("/health", methods=["GET"])
 def health():
